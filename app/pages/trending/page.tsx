@@ -1,0 +1,200 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import Navbar from '@/app/components/navbar/Navbar';
+import Footer from '@/app/components/footer/Footer';
+import MovieCard from '@/app/components/moviecard/MovieCard';
+import { movieApi } from '@/app/lib/api';
+
+interface Movie {
+  id: number;
+  title: string;
+  slug: string;
+  thumbnail?: string;
+  description?: string;
+  duration?: number;
+  release_year?: number;
+  rating?: number;
+  views: number;
+  categories?: { id: number; name: string; slug: string }[];
+}
+
+export default function TrendingPage() {
+  const [timeFilter, setTimeFilter] = useState('week');
+  const [movies, setMovies] = useState<Movie[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+
+  const fetchMovies = async (pageNum: number = 1, reset: boolean = false) => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const data = await movieApi.getMovies({ 
+        limit: 20, 
+        page: pageNum,
+        sortBy: 'views', 
+        order: 'DESC' 
+      });
+
+      if (reset) {
+        setMovies(data || []);
+      } else {
+        setMovies(prev => [...prev, ...(data || [])]);
+      }
+      
+      setHasMore(data && data.length === 20);
+    } catch (err: any) {
+      console.error('Error fetching trending movies:', err);
+      setError(err.message || 'Failed to fetch trending movies');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMovies(1, true);
+  }, [timeFilter]);
+
+  const handleLoadMore = () => {
+    const nextPage = page + 1;
+    setPage(nextPage);
+    fetchMovies(nextPage);
+  };
+
+  const getCategoryName = (movie: Movie) => {
+    if (movie.categories && movie.categories.length > 0) {
+      return movie.categories[0].name;
+    }
+    return 'Phim';
+  };
+
+  return (
+    <div className="min-h-screen bg-black">
+      <Navbar />
+      
+      {/* Hero Section */}
+      <section className="relative pt-20 pb-12">
+        <div className="absolute inset-0">
+          <img
+            src="https://images.unsplash.com/photo-1534447677768-be436bb09401?w=1920&h=600&fit=crop"
+            alt="Trending"
+            className="w-full h-full object-cover"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent" />
+        </div>
+        
+        <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-16">
+          <div className="max-w-[1920px] mx-auto">
+            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
+              Phim Xu Hướng
+            </h1>
+            <p className="text-gray-300 text-lg mb-6">
+              Khám phá những bộ phim hot nhất tuần này
+            </p>
+            
+            {/* Time Filter */}
+            <div className="flex gap-4">
+              <button
+                onClick={() => { setTimeFilter('day'); setPage(1); }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  timeFilter === 'day' 
+                    ? 'bg-red-600 text-white' 
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Hôm nay
+              </button>
+              <button
+                onClick={() => { setTimeFilter('week'); setPage(1); }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  timeFilter === 'week' 
+                    ? 'bg-red-600 text-white' 
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Tuần này
+              </button>
+              <button
+                onClick={() => { setTimeFilter('month'); setPage(1); }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  timeFilter === 'month' 
+                    ? 'bg-red-600 text-white' 
+                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                }`}
+              >
+                Tháng này
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Trending Movies Grid */}
+      <section className="py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-[1920px] mx-auto">
+          {error ? (
+            <div className="text-center py-12">
+              <p className="text-red-500 text-xl">{error}</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-8">
+                <h2 className="text-2xl font-bold text-white">
+                  Top Phim Xu Hướng
+                </h2>
+                <div className="flex items-center gap-2 text-gray-400">
+                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                  <span>Cập nhật liên tục</span>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
+                {movies.map((movie, index) => (
+                  <div key={movie.id} className="relative">
+                    <div className="absolute top-2 left-2 z-10 w-8 h-8 bg-red-600 rounded-full flex items-center justify-center">
+                      <span className="text-white font-bold">{index + 1}</span>
+                    </div>
+                    <MovieCard
+                      id={String(movie.id)}
+                      title={movie.title}
+                      poster={movie.thumbnail || ''}
+                      rating={Number(movie.rating) || 0}
+                      year={movie.release_year || 0}
+                      genre={getCategoryName(movie)}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {/* Loading */}
+              {loading && (
+                <div className="text-center py-8">
+                  <div className="text-white">Đang tải...</div>
+                </div>
+              )}
+
+              {/* Load More */}
+              {hasMore && !loading && (
+                <div className="text-center mt-12">
+                  <button 
+                    onClick={handleLoadMore}
+                    className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-3 rounded-lg font-medium transition-colors"
+                  >
+                    Xem thêm
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </section>
+
+      <Footer />
+    </div>
+  );
+}
