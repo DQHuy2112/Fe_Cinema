@@ -43,6 +43,117 @@ class ApiError extends Error {
   }
 }
 
+// ============================================================
+// JWT Refresh Token — Automatic Interceptor
+// ============================================================
+// Phát hiện file nào đang gọi để tránh circular call
+const isBrowser = typeof window !== 'undefined';
+
+let isRefreshing = false;
+let refreshSubscribers: Array<(token: string) => void> = [];
+
+function subscribeTokenRefresh(callback: (token: string) => void) {
+  refreshSubscribers.push(callback);
+}
+
+function onTokenRefreshed(newToken: string) {
+  refreshSubscribers.forEach(cb => cb(newToken));
+  refreshSubscribers = [];
+}
+
+/** Đồng bộ React state sau khi fetchApi refresh JWT thành công */
+export const AUTH_ACCESS_TOKEN_REFRESHED_EVENT = 'cinema-access-token-refreshed';
+
+function onRefreshFailed() {
+  refreshSubscribers = [];
+  if (isBrowser) {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('refreshToken');
+    window.location.href = '/pages/auth?expired=1';
+  }
+}
+
+/** Retry sau refresh: ghi đè Authorization cũ (vd userApi truyền Bearer hết hạn). */
+function headersWithFreshBearer(options: RequestInit, accessToken: string): Record<string, string> {
+  const out: Record<string, string> = { 'Content-Type': 'application/json' };
+  const raw = options.headers;
+  if (raw instanceof Headers) {
+    raw.forEach((value, key) => {
+      if (key.toLowerCase() !== 'authorization') out[key] = value;
+    });
+  } else if (Array.isArray(raw)) {
+    for (const [key, value] of raw) {
+      if (key.toLowerCase() !== 'authorization') out[key] = value;
+    }
+  } else if (raw && typeof raw === 'object') {
+    for (const [key, value] of Object.entries(raw)) {
+      if (key.toLowerCase() !== 'authorization' && typeof value === 'string') out[key] = value;
+    }
+  }
+  out.Authorization = `Bearer ${accessToken}`;
+  return out;
+}
+
+async function doRefreshToken(): Promise<string | null> {
+  if (!isBrowser) return null;
+
+  const refreshToken = localStorage.getItem('refreshToken');
+  if (!refreshToken) {
+    onRefreshFailed();
+    return null;
+  }
+
+  try {
+    const res = await fetch(apiUrl('/auth/refresh'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    const json = await res.json();
+    if (json.success && json.data?.accessToken) {
+      const newAccessToken = json.data.accessToken;
+      const newRefreshToken = json.data.refreshToken;
+
+      localStorage.setItem('token', newAccessToken);
+      if (newRefreshToken) {
+        localStorage.setItem('refreshToken', newRefreshToken);
+      }
+
+      if (isBrowser) {
+        window.dispatchEvent(
+          new CustomEvent(AUTH_ACCESS_TOKEN_REFRESHED_EVENT, { detail: { accessToken: newAccessToken } })
+        );
+      }
+
+      onTokenRefreshed(newAccessToken);
+      return newAccessToken;
+    } else {
+      onRefreshFailed();
+      return null;
+    }
+  } catch {
+    onRefreshFailed();
+    return null;
+  }
+}
+
+/** Khi Next.js rewrite tới BE lỗi (BE tắt), thường trả 500 + body "Internal Server Error" (không phải JSON). */
+function messageWhenUpstreamLikelyDown(status: number, rawBody: string): string | null {
+  const trimmed = rawBody.trim();
+  const lower = trimmed.toLowerCase();
+  if (status === 502 || status === 503 || status === 504) {
+    return 'Không kết nối được API backend. Hãy chạy be_cinema (npm run dev, cổng 8080) rồi tải lại trang.';
+  }
+  if (status === 500) {
+    if (!trimmed || lower === 'internal server error' || lower.startsWith('<!doctype')) {
+      return 'Không kết nối được API backend. Hãy chạy be_cinema (npm run dev, cổng 8080) rồi tải lại trang.';
+    }
+  }
+  return null;
+}
+
 async function fetchApi<T>(
   endpoint: string,
   options: RequestInit = {}
@@ -51,12 +162,24 @@ async function fetchApi<T>(
   const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
   const url = `${base}${path}`;
 
+  // Gắn token tự động từ localStorage (nếu chưa có trong options)
+  let token: string | null = null;
+  if (isBrowser) {
+    token = localStorage.getItem('token');
+  }
+
+  const hasAuthHeader = options.headers && (
+    (options.headers as Record<string, string>)['Authorization'] ||
+    (options.headers as Record<string, string>)['authorization']
+  );
+
   let response: Response;
   try {
     response = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
+        ...(token && !hasAuthHeader ? { Authorization: `Bearer ${token}` } : {}),
         ...options.headers,
       },
     });
@@ -70,16 +193,73 @@ async function fetchApi<T>(
     throw err;
   }
 
+  // Xử lý 401 — thử refresh token rồi retry 1 lần (kể cả khi caller đã gửi Authorization, vd userApi)
+  if (response.status === 401 && isBrowser && (token || hasAuthHeader)) {
+    const msg = await response.clone().text();
+    let json: ApiResponse<T>;
+    try {
+      json = JSON.parse(msg);
+    } catch {
+      throw new ApiError(response.status, msg.slice(0, 200) || 'Lỗi không xác định');
+    }
+
+    // Nếu backend báo token hết hạn
+    if (json.message?.toLowerCase().includes('expired') ||
+        json.message?.toLowerCase().includes('invalid') ||
+        json.message?.toLowerCase().includes('token')) {
+
+      if (!isRefreshing) {
+        isRefreshing = true;
+        const newToken = await doRefreshToken();
+        isRefreshing = false;
+
+        if (newToken) {
+          // Retry request với token mới
+          response = await fetch(url, {
+            ...options,
+            headers: headersWithFreshBearer(options, newToken),
+          });
+        } else {
+          throw new ApiError(401, 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        }
+      } else {
+        // Đang refresh rồi — đăng ký callback, chờ token mới
+        return new Promise((resolve, reject) => {
+          subscribeTokenRefresh(async (newToken) => {
+            try {
+              const retryRes = await fetch(url, {
+                ...options,
+                headers: headersWithFreshBearer(options, newToken),
+              });
+              const retryJson = await retryRes.json();
+              if (!retryRes.ok || !retryJson.success) {
+                reject(new ApiError(retryRes.status, retryJson.message || 'Lỗi sau khi refresh'));
+              } else {
+                resolve(retryJson.data as T);
+              }
+            } catch (e) {
+              reject(e);
+            }
+          });
+        });
+      }
+    } else {
+      throw new ApiError(response.status, json.message || 'Unauthorized');
+    }
+  }
+
   const text = await response.text();
   let data: ApiResponse<T>;
   try {
     data = JSON.parse(text) as ApiResponse<T>;
   } catch {
+    const upstreamHint = messageWhenUpstreamLikelyDown(response.status, text);
     throw new ApiError(
       response.status,
-      response.ok
-        ? 'Phản hồi API không phải JSON'
-        : text.slice(0, 200) || 'Lỗi không xác định từ máy chủ'
+      upstreamHint ??
+        (response.ok
+          ? 'Phản hồi API không phải JSON'
+          : text.slice(0, 200) || 'Lỗi không xác định từ máy chủ')
     );
   }
 
@@ -128,6 +308,27 @@ export async function uploadVideo(file: File, token: string): Promise<{ url: str
   const json = (await res.json()) as ApiResponse<{ url: string }>;
   if (!res.ok || !json.success) {
     throw new ApiError(res.status, json.message || 'Upload video thất bại');
+  }
+  return json.data;
+}
+
+/** Upload avatar người dùng - trả về { avatar: string } */
+export async function uploadAvatar(file: File, token: string): Promise<{ avatar: string }> {
+  const url = apiUrl('/users/avatar');
+  const formData = new FormData();
+  formData.append('avatar', file);
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+  });
+
+  const json = (await res.json()) as ApiResponse<{ avatar: string }>;
+  if (!res.ok || !json.success) {
+    throw new ApiError(res.status, json.message || 'Upload avatar thất bại');
   }
   return json.data;
 }
@@ -303,46 +504,95 @@ export const authApi = {
   logout: () => {
     return fetchApi<null>('/auth/logout', { method: 'POST' });
   },
-};
 
-export const userApi = {
-  getProfile: () => {
-    return fetchApi<any>('/users/profile');
+  forgotPassword: (email: string) => {
+    return fetchApi<{ otp?: string; message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
   },
 
-  updateProfile: (data: { username?: string; avatar?: string }) => {
+  resetPassword: (email: string, otp: string, newPassword: string) => {
+    return fetchApi<null>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp, newPassword }),
+    });
+  },
+};
+
+const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+export const userApi = {
+  getProfile: (token: string) => {
+    return fetchApi<any>('/users/profile', { headers: authHeaders(token) });
+  },
+
+  updateProfile: (token: string, data: { username?: string; email?: string; avatar?: string }) => {
     return fetchApi<any>('/users/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
+      headers: authHeaders(token),
     });
   },
 
-  getWatchHistory: (params?: { page?: number; limit?: number }) => {
+  changePassword: (token: string, currentPassword: string, newPassword: string) => {
+    return fetchApi<null>('/users/password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword, newPassword }),
+      headers: authHeaders(token),
+    });
+  },
+
+  getWatchHistory: (token: string, params?: { page?: number; limit?: number }) => {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.limit) searchParams.append('limit', String(params.limit));
     const query = searchParams.toString();
-    return fetchApi<any[]>(`/users/history${query ? `?${query}` : ''}`);
+    return fetchApi<any[]>(`/users/history${query ? `?${query}` : ''}`, {
+      headers: authHeaders(token),
+    });
   },
 
-  getFavorites: (params?: { page?: number; limit?: number }) => {
+  getFavorites: (token: string, params?: { page?: number; limit?: number }) => {
     const searchParams = new URLSearchParams();
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.limit) searchParams.append('limit', String(params.limit));
     const query = searchParams.toString();
-    return fetchApi<any[]>(`/users/favorites${query ? `?${query}` : ''}`);
+    return fetchApi<any[]>(`/users/favorites${query ? `?${query}` : ''}`, {
+      headers: authHeaders(token),
+    });
   },
 
-  addToFavorites: (movieId: number) => {
-    return fetchApi<any>('/users/favorites', {
+  getMyComments: (token: string) => {
+    return fetchApi<any[]>('/users/comments', { headers: authHeaders(token) });
+  },
+
+  /** Backend: POST /users/favorites/:movieId bật/tắt yêu thích */
+  toggleFavorite: (token: string, movieId: number) => {
+    return fetchApi<any>(`/users/favorites/${movieId}`, {
       method: 'POST',
-      body: JSON.stringify({ movieId }),
+      headers: authHeaders(token),
     });
   },
 
-  removeFromFavorites: (movieId: number) => {
+  addToWatchHistory: (token: string, movieId: number) => {
+    return fetchApi<any>(`/users/history/${movieId}`, {
+      method: 'POST',
+      headers: authHeaders(token),
+    });
+  },
+
+  removeFromWatchHistory: (token: string, movieId: number) => {
+    return fetchApi<any>(`/users/history/${movieId}`, {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    });
+  },
+
+  removeFromFavorites: (token: string, movieId: number) => {
     return fetchApi<any>(`/users/favorites/${movieId}`, {
       method: 'DELETE',
+      headers: authHeaders(token),
     });
   },
 };
@@ -353,19 +603,21 @@ export const commentApi = {
     if (params?.page) searchParams.append('page', String(params.page));
     if (params?.limit) searchParams.append('limit', String(params.limit));
     const query = searchParams.toString();
-    return fetchApi<any[]>(`/comments/${movieId}${query ? `?${query}` : ''}`);
+    return fetchApi<any[]>(`/movies/${movieId}/comments${query ? `?${query}` : ''}`);
   },
 
-  addComment: (movieId: number, content: string, rating?: number) => {
-    return fetchApi<any>(`/comments/${movieId}`, {
+  addComment: (movieId: number, content: string, rating?: number, token?: string) => {
+    return fetchApi<any>(`/movies/${movieId}/comments`, {
       method: 'POST',
       body: JSON.stringify({ content, rating }),
+      ...(token ? { headers: authHeaders(token) } : {}),
     });
   },
 
-  deleteComment: (commentId: number) => {
+  deleteComment: (commentId: number, token: string) => {
     return fetchApi<any>(`/comments/${commentId}`, {
       method: 'DELETE',
+      headers: authHeaders(token),
     });
   },
 };

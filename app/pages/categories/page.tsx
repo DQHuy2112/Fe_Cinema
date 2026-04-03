@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Navbar from '@/app/components/navbar/Navbar';
 import Footer from '@/app/components/footer/Footer';
@@ -26,10 +26,10 @@ interface Movie {
   categories?: Category[];
 }
 
-export default function CategoriesPage() {
+function CategoriesPageContent() {
   const searchParams = useSearchParams();
   const categorySlug = searchParams.get('category');
-  
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedGenre, setSelectedGenre] = useState(categorySlug || 'all');
   const [movies, setMovies] = useState<Movie[]>([]);
@@ -63,18 +63,18 @@ export default function CategoriesPage() {
       setError(null);
 
       let data: Movie[];
-      
+
       if (selectedGenre === 'all') {
-        data = await movieApi.getMovies({ 
-          limit: 20, 
+        data = await movieApi.getMovies({
+          limit: 20,
           page: pageNum,
-          sortBy: 'created_at', 
-          order: 'DESC' 
+          sortBy: 'created_at',
+          order: 'DESC'
         });
       } else {
-        const result = await categoryApi.getMoviesByCategory(selectedGenre, { 
-          limit: 20, 
-          page: pageNum 
+        const result = await categoryApi.getMoviesByCategory(selectedGenre, {
+          limit: 20,
+          page: pageNum
         });
         data = result?.length ? result : [];
       }
@@ -84,7 +84,7 @@ export default function CategoriesPage() {
       } else {
         setMovies(prev => [...prev, ...(data || [])]);
       }
-      
+
       setHasMore(data && data.length === 20);
       setTotal(data?.length || 0);
     } catch (err: any) {
@@ -113,25 +113,25 @@ export default function CategoriesPage() {
     return 'Phim';
   };
 
-  const currentCategoryName = selectedGenre === 'all' 
-    ? 'Tất cả' 
+  const currentCategoryName = selectedGenre === 'all'
+    ? 'Tất cả'
     : categories.find(c => c.slug === selectedGenre)?.name || 'Phim';
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="min-h-screen bg-gray-50">
       <Navbar />
-      
+
       {/* Hero Section */}
-      <section className="relative pt-20 pb-12">
+      <section className="relative pt-20 pb-12 bg-gray-900">
         <div className="absolute inset-0">
           <img
             src="https://images.unsplash.com/photo-1541963463532-d68292c34b19?w=1920&h=600&fit=crop"
             alt="Categories"
-            className="w-full h-full object-cover"
+            className="w-full h-full object-cover opacity-40"
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/80 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-gray-900/80 to-transparent" />
         </div>
-        
+
         <div className="relative z-10 px-4 sm:px-6 lg:px-8 py-16">
           <div className="max-w-[1920px] mx-auto">
             <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">
@@ -145,15 +145,15 @@ export default function CategoriesPage() {
       </section>
 
       {/* Genres List */}
-      <section className="py-8 px-4 sm:px-6 lg:px-8 border-b border-gray-800">
+      <section className="py-8 px-4 sm:px-6 lg:px-8 bg-white border-b border-gray-200">
         <div className="max-w-[1920px] mx-auto">
           <div className="flex flex-wrap gap-3">
             <button
               onClick={() => setSelectedGenre('all')}
               className={`px-4 py-2 rounded-full font-medium transition-colors flex items-center gap-2 ${
-                selectedGenre === 'all' 
-                  ? 'bg-red-600 text-white' 
-                  : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                selectedGenre === 'all'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
               Tất cả
@@ -163,9 +163,9 @@ export default function CategoriesPage() {
                 key={category.id}
                 onClick={() => setSelectedGenre(category.slug)}
                 className={`px-4 py-2 rounded-full font-medium transition-colors flex items-center gap-2 ${
-                  selectedGenre === category.slug 
-                    ? 'bg-red-600 text-white' 
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                  selectedGenre === category.slug
+                    ? 'bg-red-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
               >
                 {category.name}
@@ -185,11 +185,11 @@ export default function CategoriesPage() {
           ) : (
             <>
               <div className="flex items-center justify-between mb-8">
-                <h2 className="text-2xl font-bold text-white">
+                <h2 className="text-2xl font-bold text-gray-900">
                   {currentCategoryName} ({movies.length} phim)
                 </h2>
               </div>
-              
+
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
                 {movies.map((movie) => (
                   <MovieCard
@@ -207,23 +207,23 @@ export default function CategoriesPage() {
               {/* Loading */}
               {loading && (
                 <div className="text-center py-8">
-                  <div className="text-white">Đang tải...</div>
+                  <div className="text-gray-600">Đang tải...</div>
                 </div>
               )}
 
               {/* No results */}
               {!loading && movies.length === 0 && (
                 <div className="text-center py-12">
-                  <p className="text-gray-400 text-lg">Không có phim nào trong thể loại này.</p>
+                  <p className="text-gray-500 text-lg">Không có phim nào trong thể loại này.</p>
                 </div>
               )}
 
               {/* Load More */}
               {hasMore && !loading && movies.length > 0 && (
                 <div className="text-center mt-12">
-                  <button 
+                  <button
                     onClick={handleLoadMore}
-                    className="bg-gray-800 hover:bg-gray-700 text-white px-8 py-3 rounded-lg font-medium transition-colors"
+                    className="bg-gray-200 hover:bg-gray-300 text-gray-800 px-8 py-3 rounded-lg font-medium transition-colors"
                   >
                     Xem thêm
                   </button>
@@ -236,5 +236,19 @@ export default function CategoriesPage() {
 
       <Footer />
     </div>
+  );
+}
+
+export default function CategoriesPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <p className="text-gray-600">Đang tải...</p>
+        </div>
+      }
+    >
+      <CategoriesPageContent />
+    </Suspense>
   );
 }

@@ -6,8 +6,11 @@ import Providers from "./providers";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "CinemaX - Xem phim trực tuyến",
-  description: "Nền tảng xem phim trực tuyến hàng đầu Việt Nam",
+  title: "DANNPTUD Cinema - Xem phim trực tuyến",
+  description: "Nền tảng xem phim trực tuyến hàng đầu Việt Nam. Thưởng thức hàng ngàn bộ phim chất lượng cao với giao diện hiện đại.",
+  icons: {
+    icon: "/cinemax-logo.png",
+  },
 };
 
 const VIDEO_DOMAINS =

@@ -1,0 +1,13 @@
+<svg width="400" height="600" viewBox="0 0 400 600" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="600" fill="#1E293B"/>
+  <rect width="400" height="600" fill="url(#pattern)"/>
+  <circle cx="200" cy="250" r="60" fill="#334155"/>
+  <path d="M185 225V275L250 250L185 225Z" fill="#64748B"/>
+  <text x="200" y="380" text-anchor="middle" fill="#64748B" font-family="Inter, sans-serif" font-size="18" font-weight="500">No Image</text>
+  <text x="200" y="420" text-anchor="middle" fill="#475569" font-family="Inter, sans-serif" font-size="14">Movie Poster</text>
+  <defs>
+    <pattern id="pattern" width="20" height="20" patternUnits="userSpaceOnUse">
+      <circle cx="10" cy="10" r="1" fill="#334155"/>
+    </pattern>
+  </defs>
+</svg>

@@ -8,6 +8,7 @@ interface User {
   id: number;
   username: string;
   email: string;
+  avatar: string | null;
   role: 'user' | 'admin';
   is_active: boolean;
   created_at: string;
@@ -147,11 +148,22 @@ export default function AdminUsers() {
                     <tr key={user.id} className="hover:bg-gray-50">
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0">
-                            <span className="text-white font-medium">
-                              {user.username.charAt(0).toUpperCase()}
-                            </span>
-                          </div>
+                          {user.avatar ? (
+                            <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-gray-200">
+                              <img
+                                src={user.avatar.startsWith('http') ? user.avatar : `http://127.0.0.1:8080${user.avatar}`}
+                                alt={user.username}
+                                className="w-full h-full object-cover"
+                                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                              />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0">
+                              <span className="text-white font-medium">
+                                {user.username.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                          )}
                           <div>
                             <p className="text-sm font-medium text-gray-900">{user.username}</p>
                             <p className="text-xs text-gray-500">{user.email}</p>
