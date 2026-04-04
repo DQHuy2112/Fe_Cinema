@@ -669,10 +669,15 @@ export const vipApi = {
     });
   },
 
-  createMoMoPayment: (token: string, packageId: number) => {
+  createMoMoPayment: (
+    token: string,
+    packageId: number,
+    paymentMethod: 'captureWallet' | 'payWithATM' | 'payWithCC' = 'captureWallet',
+    userEmail?: string,
+  ) => {
     return fetchApi<{ paymentUrl: string; orderId: string }>('/vip/create-momo', {
       method: 'POST',
-      body: JSON.stringify({ packageId }),
+      body: JSON.stringify({ packageId, paymentMethod, userEmail }),
       headers: authHeaders(token),
     });
   },

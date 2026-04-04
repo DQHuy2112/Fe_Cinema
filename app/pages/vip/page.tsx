@@ -5,6 +5,9 @@ import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
 import { vipApi, VipPackage, VipStatus } from '@/app/lib/api';
 
+type MoMoSubMethod = 'captureWallet' | 'payWithATM' | 'payWithCC';
+type PayMethod = 'vnpay' | 'momo';
+
 function formatPrice(price: number): string {
   return new Intl.NumberFormat('vi-VN').format(price) + 'đ';
 }
@@ -16,6 +19,58 @@ function formatDuration(days: number): string {
   return `${days} ngày`;
 }
 
+function MoMoMethodSelector({
+  value,
+  onChange,
+  isDark,
+}: {
+  value: MoMoSubMethod;
+  onChange: (v: MoMoSubMethod) => void;
+  isDark: boolean;
+}) {
+  const methods: { value: MoMoSubMethod; label: string; icon: string; desc: string }[] = [
+    {
+      value: 'captureWallet',
+      label: 'Ví MoMo',
+      icon: '💎',
+      desc: 'QR / App MoMo',
+    },
+    {
+      value: 'payWithATM',
+      label: 'Thẻ ATM',
+      icon: '🏦',
+      desc: 'Nội địa (Napas)',
+    },
+    {
+      value: 'payWithCC',
+      label: 'Thẻ quốc tế',
+      icon: '💳',
+      desc: 'Visa / Mastercard',
+    },
+  ];
+
+  return (
+    <div className="flex gap-2">
+      {methods.map((m) => (
+        <button
+          key={m.value}
+          type="button"
+          onClick={() => onChange(m.value)}
+          className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-semibold border-2 transition-all ${
+            value === m.value
+              ? 'border-[#a50064] bg-[#a50064]/5 text-[#a50064]'
+              : `border-[#e2e8f0] ${isDark ? 'bg-white/10 text-white/70 border-white/20' : 'bg-white text-[#475569] border-[#e2e8f0]'} hover:border-[#a50064]/50`
+          }`}
+        >
+          <span className="text-base">{m.icon}</span>
+          <span className="leading-tight text-center">{m.label}</span>
+          <span className={`font-normal opacity-60 ${isDark ? 'text-white/50' : 'text-[#94a3b8]'}`}>{m.desc}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function PackageCard({
   pkg,
   onBuy,
@@ -23,13 +78,17 @@ function PackageCard({
   isVip,
   paymentMethod,
   onPaymentMethodChange,
+  momoMethod,
+  onMoMoMethodChange,
 }: {
   pkg: VipPackage;
   onBuy: () => void;
   isLoading: boolean;
   isVip: boolean;
-  paymentMethod: 'vnpay' | 'momo';
-  onPaymentMethodChange: (m: 'vnpay' | 'momo') => void;
+  paymentMethod: PayMethod;
+  onPaymentMethodChange: (m: PayMethod) => void;
+  momoMethod: MoMoSubMethod;
+  onMoMoMethodChange: (m: MoMoSubMethod) => void;
 }) {
   const isBest = pkg.duration === 365;
   const isPopular = pkg.duration === 30;
@@ -94,11 +153,11 @@ function PackageCard({
 
       {/* Payment method selector */}
       {!isVip && (
-        <div className={`mb-5 p-4 rounded-2xl ${isBest ? 'bg-white/15' : 'bg-[#f8fafc]'}`}>
+        <div className={`mb-4 p-4 rounded-2xl ${isBest ? 'bg-white/15' : 'bg-[#f8fafc]'}`}>
           <p className={`text-xs font-semibold mb-3 ${isBest ? 'text-white/80' : 'text-[#64748b]'}`}>
-            Chọn phương thức thanh toán
+            Chọn cổng thanh toán
           </p>
-          <div className="flex gap-3">
+          <div className="flex gap-3 mb-3">
             <button
               type="button"
               onClick={() => onPaymentMethodChange('vnpay')}
@@ -122,6 +181,21 @@ function PackageCard({
               <img src="https://upload.wikimedia.org/wikipedia/commons/b/b5/MoMo_Logo.png" alt="MoMo" className="h-5 object-contain" />
             </button>
           </div>
+
+          {/* MoMo sub-method selector */}
+          {paymentMethod === 'momo' && (
+            <>
+              <div className={`h-px mb-3 ${isBest ? 'bg-white/20' : 'bg-[#e2e8f0]'}`} />
+              <p className={`text-xs font-semibold mb-2 ${isBest ? 'text-white/70' : 'text-[#94a3b8]'}`}>
+                Chọn phương thức MoMo
+              </p>
+              <MoMoMethodSelector
+                value={momoMethod}
+                onChange={onMoMoMethodChange}
+                isDark={isBest}
+              />
+            </>
+          )}
         </div>
       )}
 
@@ -148,7 +222,8 @@ export default function VipPage() {
   const [loading, setLoading] = useState(true);
   const [purchasing, setPurchasing] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [paymentMethod, setPaymentMethod] = useState<'vnpay' | 'momo'>('vnpay');
+  const [paymentMethod, setPaymentMethod] = useState<PayMethod>('vnpay');
+  const [momoMethod, setMoMoMethod] = useState<MoMoSubMethod>('captureWallet');
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -186,7 +261,7 @@ export default function VipPage() {
     try {
       let paymentUrl: string;
       if (paymentMethod === 'momo') {
-        const result = await vipApi.createMoMoPayment(token, pkg.id);
+        const result = await vipApi.createMoMoPayment(token, pkg.id, momoMethod);
         paymentUrl = result.paymentUrl;
       } else {
         const result = await vipApi.createPayment(token, pkg.id);
@@ -295,6 +370,8 @@ export default function VipPage() {
                 isVip={vipStatus?.isVip === true}
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
+                momoMethod={momoMethod}
+                onMoMoMethodChange={setMoMoMethod}
               />
             ))}
           </div>
@@ -316,7 +393,7 @@ export default function VipPage() {
             },
             {
               q: 'Thanh toán qua những phương thức nào?',
-              a: 'Hiện tại hỗ trợ thanh toán qua VNPAY (20+ ngân hàng) và MoMo (thanh toán tức thì qua app MoMo).',
+              a: 'Hiện tại hỗ trợ thanh toán qua VNPAY (20+ ngân hàng) và MoMo (ví MoMo / thẻ ATM / thẻ quốc tế Visa-Mastercard).',
             },
             {
               q: 'Làm sao biết tôi đã là VIP?',
