@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
 import { useLiveSearch } from '@/app/context/LiveSearchContext';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { movieApi } from '@/app/lib/api';
 import { posterSrc } from '@/app/lib/movieUtils';
 
@@ -38,6 +38,10 @@ export default function Navbar() {
   const { liveQuery, setLiveQuery, clearLiveQuery } = useLiveSearch();
   const { user, isAdmin, logout, isLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Hide navbar on payment result page
+  const isPaymentResult = pathname === '/pages/payment-result';
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -117,6 +121,8 @@ export default function Navbar() {
   };
 
   return (
+    <>
+      {isPaymentResult ? null : (
     <nav
       className={`fixed top-0 left-0 right-0 z-50 transition-all duration-500 ${isScrolled ? 'glass shadow-md py-2' : 'bg-transparent py-4'
         }`}
@@ -160,6 +166,12 @@ export default function Navbar() {
               className="px-4 py-2 text-sm font-medium text-[#475569] hover:text-[#f20d0d] transition-colors rounded-lg hover:bg-[#f1f5f9]"
             >
               Tìm kiếm
+            </Link>
+            <Link
+              href="/pages/vip"
+              className="px-4 py-2 text-sm font-bold text-[#f20d0d] hover:text-[#d90a0a] transition-colors rounded-lg hover:bg-[#fee2e2]"
+            >
+              VIP
             </Link>
             {isAdmin && (
               <Link
@@ -431,6 +443,9 @@ export default function Navbar() {
               <Link href="/pages/search" className="px-4 py-3 text-[#475569] hover:text-[#f20d0d] hover:bg-[#f1f5f9] transition-colors rounded-xl" onClick={() => setIsMenuOpen(false)}>
                 Tìm kiếm
               </Link>
+              <Link href="/pages/vip" className="px-4 py-3 text-[#f20d0d] hover:bg-[#fee2e2] transition-colors rounded-xl font-bold" onClick={() => setIsMenuOpen(false)}>
+                VIP
+              </Link>
               {isAdmin && (
                 <Link href="/admin" className="px-4 py-3 text-[#f20d0d] hover:bg-[#fee2e2] transition-colors rounded-xl font-medium" onClick={() => setIsMenuOpen(false)}>
                   Admin
@@ -468,5 +483,7 @@ export default function Navbar() {
         )}
       </div>
     </nav>
+      )}
+    </>
   );
 }

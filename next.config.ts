@@ -31,6 +31,16 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  /** VNPAY / .env cũ dùng `/payment-result` — trang thật là `/pages/payment-result` */
+  async redirects() {
+    return [
+      {
+        source: "/payment-result",
+        destination: "/pages/payment-result",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     const csp = [
       "default-src 'self'",

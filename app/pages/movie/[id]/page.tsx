@@ -30,6 +30,7 @@ interface Movie {
   views: number;
   rating?: number;
   is_active: boolean;
+  is_vip?: boolean;
   categories?: { id: number; name: string; slug: string }[];
 }
 
@@ -58,13 +59,21 @@ export default function MovieDetail() {
         setLoading(true);
         setError(null);
 
-        const [movieData, trendingData] = await Promise.all([
+        const [movieResult, trendingResult] = await Promise.allSettled([
           movieApi.getMovieById(id),
           movieApi.getTrendingMovies(5),
         ]);
 
+        const movieData = movieResult.status === 'fulfilled' ? movieResult.value : null;
+        const trendingData = trendingResult.status === 'fulfilled' ? (Array.isArray(trendingResult.value) ? trendingResult.value : []) : [];
+
         setMovie(movieData || null);
-        setSimilarMovies(trendingData?.filter((m: Movie) => m.id !== Number(id)).slice(0, 5) || []);
+        setSimilarMovies(movieData ? trendingData.filter((m: Movie) => m.id !== Number(id)).slice(0, 5) : []);
+
+        if (movieResult.status === 'rejected') {
+          const err = movieResult.reason;
+          setError(err?.message || 'Không thể kết nối API backend. Hãy chạy backend (npm run dev, port 8080).');
+        }
       } catch (err: any) {
         console.error('Error fetching movie:', err);
         setError(err.message || 'Failed to fetch movie');
@@ -167,8 +176,16 @@ export default function MovieDetail() {
 
             {/* Info */}
             <div className="flex-1">
-              <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">
+              <h1 className="text-3xl md:text-5xl font-bold text-white mb-4 flex items-center gap-3 flex-wrap">
                 {movie.title}
+                {movie.is_vip && (
+                  <span className="inline-flex items-center gap-1 bg-yellow-400 text-[#0f172a] text-xs font-bold px-3 py-1 rounded-full">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                    VIP
+                  </span>
+                )}
               </h1>
 
               <div className="flex flex-wrap items-center gap-4 text-gray-300 mb-6">
@@ -196,11 +213,11 @@ export default function MovieDetail() {
                 ))}
               </div>
 
-              <p className="text-gray-300 mb-8 leading-relaxed">
+              <p className="text-gray-300 mb-4 leading-relaxed">
                 {movie.description || 'Chưa có mô tả cho phim này.'}
               </p>
 
-              <div className="flex flex-wrap gap-4 mb-8">
+              <div className="flex flex-wrap gap-4 mb-4">
                 <Link
                   href={`/pages/watch/${movie.id}`}
                   className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-lg font-medium flex items-center gap-2 transition-colors"
@@ -210,6 +227,14 @@ export default function MovieDetail() {
                   </svg>
                   Xem phim
                 </Link>
+                {movie.is_vip && (
+                  <div className="flex items-center gap-2 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 px-4 py-3 rounded-lg text-sm font-medium">
+                    <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                    </svg>
+                    Yêu cầu gói VIP
+                  </div>
+                )}
                 <button
                   onClick={handleToggleFavorite}
                   disabled={favoritesLoading}
@@ -240,7 +265,7 @@ export default function MovieDetail() {
               </div>
 
               {/* Director & Cast */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
                 <div>
                   <h3 className="text-white font-semibold mb-2">Đạo diễn</h3>
                   <p className="text-gray-400">{movie.director || 'Chưa cập nhật'}</p>
@@ -347,7 +372,7 @@ export default function MovieDetail() {
       {similarMovies.length > 0 && (
         <section className="py-12 px-4 sm:px-6 lg:px-8 bg-white">
           <div className="max-w-[1920px] mx-auto">
-            <h2 className="text-2xl font-bold text-gray-900 mb-8">Phim tương tự</h2>
+            <h2 className="text-2xl font-bold text-gray-900 mb-4">Phim tương tự</h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 md:gap-6">
               {similarMovies.map((movieItem) => (
                 <MovieCard

@@ -34,33 +34,41 @@ export default function Home() {
 
   useEffect(() => {
     const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+      setLoading(true);
+      setError(null);
 
-        const [trending, featured, newMoviesList] = await Promise.all([
-          movieApi.getTrendingMovies(10),
-          movieApi.getMovies({ limit: 10, sortBy: 'rating', order: 'DESC' }),
-          movieApi.getMovies({ limit: 15, sortBy: 'updated_at', order: 'DESC' }),
-        ]);
+      const [trending, featured, newMoviesList] = await Promise.allSettled([
+        movieApi.getTrendingMovies(10),
+        movieApi.getMovies({ limit: 10, sortBy: 'rating', order: 'DESC' }),
+        movieApi.getMovies({ limit: 15, sortBy: 'updated_at', order: 'DESC' }),
+      ]);
 
-        setTrendingMovies(Array.isArray(trending) ? trending : []);
-        setFeaturedMovies(Array.isArray(featured) ? featured : []);
-        setNewMovies(Array.isArray(newMoviesList) ? newMoviesList : []);
+      const trendingData = trending.status === 'fulfilled' ? (Array.isArray(trending.value) ? trending.value : []) : [];
+      const featuredData = featured.status === 'fulfilled' ? (Array.isArray(featured.value) ? featured.value : []) : [];
+      const newData = newMoviesList.status === 'fulfilled' ? (Array.isArray(newMoviesList.value) ? newMoviesList.value : []) : [];
 
-        if (Array.isArray(trending) && trending.length > 0) {
-          setHeroMovie(trending[0]);
-        } else if (Array.isArray(featured) && featured.length > 0) {
-          setHeroMovie(featured[0]);
-        } else if (Array.isArray(newMoviesList) && newMoviesList.length > 0) {
-          setHeroMovie(newMoviesList[0]);
-        }
-      } catch (err: any) {
-        console.error('Error fetching movies:', err);
-        setError(err.message || 'Failed to fetch movies');
-      } finally {
-        setLoading(false);
+      setTrendingMovies(trendingData);
+      setFeaturedMovies(featuredData);
+      setNewMovies(newData);
+
+      if (trendingData.length > 0) {
+        setHeroMovie(trendingData[0]);
+      } else if (featuredData.length > 0) {
+        setHeroMovie(featuredData[0]);
+      } else if (newData.length > 0) {
+        setHeroMovie(newData[0]);
       }
+
+      if (
+        trending.status === 'rejected' &&
+        featured.status === 'rejected' &&
+        newMoviesList.status === 'rejected'
+      ) {
+        const err = trending.reason;
+        setError(err?.message || 'Không thể kết nối API backend. Hãy chạy backend (npm run dev, port 8080).');
+      }
+
+      setLoading(false);
     };
 
     fetchData();

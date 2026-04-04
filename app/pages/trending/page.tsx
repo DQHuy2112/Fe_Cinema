@@ -28,30 +28,26 @@ export default function TrendingPage() {
   const [hasMore, setHasMore] = useState(true);
 
   const fetchMovies = async (pageNum: number = 1, reset: boolean = false) => {
-    try {
-      setLoading(true);
-      setError(null);
+    setLoading(true);
+    setError(null);
 
-      const data = await movieApi.getMovies({
-        limit: 20,
-        page: pageNum,
-        sortBy: 'views',
-        order: 'DESC'
-      });
+    const result = await movieApi.getMovies({
+      limit: 20,
+      page: pageNum,
+      sortBy: 'views',
+      order: 'DESC'
+    });
 
-      if (reset) {
-        setMovies(data || []);
-      } else {
-        setMovies(prev => [...prev, ...(data || [])]);
-      }
+    const data = Array.isArray(result) ? result : [];
 
-      setHasMore(data && data.length === 20);
-    } catch (err: any) {
-      console.error('Error fetching trending movies:', err);
-      setError(err.message || 'Failed to fetch trending movies');
-    } finally {
-      setLoading(false);
+    if (reset) {
+      setMovies(data);
+    } else {
+      setMovies(prev => [...prev, ...data]);
     }
+
+    setHasMore(data.length === 20);
+    setLoading(false);
   };
 
   useEffect(() => {

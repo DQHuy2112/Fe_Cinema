@@ -652,10 +652,55 @@ export const commentApi = {
   },
 };
 
+export const vipApi = {
+  getPackages: () => {
+    return fetchApi<VipPackage[]>('/vip/packages');
+  },
+
+  getMyVip: (token: string) => {
+    return fetchApi<VipStatus>('/vip/me', { headers: authHeaders(token) });
+  },
+
+  createPayment: (token: string, packageId: number) => {
+    return fetchApi<{ paymentUrl: string; txnRef: string }>('/vip/create', {
+      method: 'POST',
+      body: JSON.stringify({ packageId }),
+      headers: authHeaders(token),
+    });
+  },
+
+  createMoMoPayment: (token: string, packageId: number) => {
+    return fetchApi<{ paymentUrl: string; orderId: string }>('/vip/create-momo', {
+      method: 'POST',
+      body: JSON.stringify({ packageId }),
+      headers: authHeaders(token),
+    });
+  },
+};
+
+export interface VipPackage {
+  id: number;
+  name: string;
+  price: number;
+  duration: number;
+  description?: string;
+  is_active: boolean;
+}
+
+export interface VipStatus {
+  isVip: boolean;
+  status: 'active' | 'expired' | 'none';
+  packageName?: string;
+  startDate?: string;
+  endDate?: string;
+  daysRemaining?: number;
+}
+
 export default {
   movieApi,
   categoryApi,
   authApi,
   userApi,
   commentApi,
+  vipApi,
 };
