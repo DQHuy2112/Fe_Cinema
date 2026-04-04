@@ -156,8 +156,9 @@ export default function AdminMovies() {
       alert('Chỉ chấp nhận video: MP4, WebM, MKV');
       return;
     }
-    if (file.size > 500 * 1024 * 1024) {
-      alert('Video tối đa 500MB');
+    const maxVideoBytes = 5 * 1024 * 1024 * 1024;
+    if (file.size > maxVideoBytes) {
+      alert('Video tối đa 5GB');
       return;
     }
     setVideoUploading(true);
@@ -872,7 +873,7 @@ export default function AdminMovies() {
                         <span className="text-sm text-gray-500">
                           {videoUploading ? 'Đang tải video lên...' : 'Kéo thả video vào đây hoặc bấm để chọn'}
                         </span>
-                        <span className="text-xs text-gray-400 mt-1">MP4, WebM, MKV (tối đa 500MB) - phát trực tiếp từ web local</span>
+                        <span className="text-xs text-gray-400 mt-1">MP4, WebM, MKV (tối đa 5GB) - phát trực tiếp từ web local</span>
                       </label>
                     </div>
                   )}

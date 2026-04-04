@@ -11,6 +11,14 @@ const VIDEO_DOMAINS =
   "https://drive.google.com https://docs.google.com";
 
 const nextConfig: NextConfig = {
+  /**
+   * Rewrite tới backend dùng http-proxy trong Next 16: mặc định chỉ buffer ~10MB và timeout 30s.
+   * Upload video admin tới 5GB + thời gian truyền dài → cần nới giới hạn proxy, không sẽ 401/reset lạ.
+   */
+  experimental: {
+    proxyClientMaxBodySize: "5500mb",
+    proxyTimeout: 900_000,
+  },
   async rewrites() {
     return [
       {

@@ -270,19 +270,67 @@ async function fetchApi<T>(
   return data.data;
 }
 
+/**
+ * Multipart upload qua Next rewrite: FormData chỉ gửi 1 lần; nếu 401 do JWT hết hạn thì refresh rồi gửi lại.
+ * Ưu tiên token từ caller, fallback localStorage (đồng bộ với fetchApi).
+ */
+async function postMultipartUploadWithRefresh(
+  url: string,
+  fieldName: string,
+  file: File,
+  callerToken: string | null
+): Promise<Response> {
+  const accessToken =
+    (callerToken && callerToken.trim()) ||
+    (isBrowser ? localStorage.getItem('token')?.trim() || '' : '');
+  if (!accessToken) {
+    throw new ApiError(401, 'Chưa đăng nhập');
+  }
+
+  const post = (t: string) => {
+    const fd = new FormData();
+    fd.append(fieldName, file);
+    return fetch(url, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${t}` },
+      body: fd,
+    });
+  };
+
+  let res = await post(accessToken);
+  if (res.status !== 401 || !isBrowser) return res;
+
+  let bodyText = '';
+  try {
+    bodyText = await res.clone().text();
+  } catch {
+    return res;
+  }
+  let parsed: { message?: string };
+  try {
+    parsed = JSON.parse(bodyText) as { message?: string };
+  } catch {
+    return res;
+  }
+  const msg = (parsed.message || '').toLowerCase();
+  const shouldRefresh =
+    msg.includes('expired') ||
+    msg.includes('invalid') ||
+    msg.includes('token') ||
+    msg.includes('no token');
+  if (!shouldRefresh) return res;
+
+  const newToken = await doRefreshToken();
+  if (!newToken) {
+    throw new ApiError(401, parsed.message || 'Phiên đăng nhập hết hạn');
+  }
+  return post(newToken);
+}
+
 /** Upload ảnh thumbnail (admin), trả về { url: string } */
 export async function uploadThumbnail(file: File, token: string): Promise<{ url: string }> {
   const url = apiUrl('/admin/upload');
-  const formData = new FormData();
-  formData.append('thumbnail', file);
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  });
+  const res = await postMultipartUploadWithRefresh(url, 'thumbnail', file, token);
 
   const json = (await res.json()) as ApiResponse<{ url: string }>;
   if (!res.ok || !json.success) {
@@ -294,16 +342,7 @@ export async function uploadThumbnail(file: File, token: string): Promise<{ url:
 /** Upload video phim (MP4, WebM, MKV) - trả về { url: string } */
 export async function uploadVideo(file: File, token: string): Promise<{ url: string }> {
   const url = apiUrl('/admin/upload-video');
-  const formData = new FormData();
-  formData.append('video', file);
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  });
+  const res = await postMultipartUploadWithRefresh(url, 'video', file, token);
 
   const json = (await res.json()) as ApiResponse<{ url: string }>;
   if (!res.ok || !json.success) {
@@ -315,16 +354,7 @@ export async function uploadVideo(file: File, token: string): Promise<{ url: str
 /** Upload avatar người dùng - trả về { avatar: string } */
 export async function uploadAvatar(file: File, token: string): Promise<{ avatar: string }> {
   const url = apiUrl('/users/avatar');
-  const formData = new FormData();
-  formData.append('avatar', file);
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  });
+  const res = await postMultipartUploadWithRefresh(url, 'avatar', file, token);
 
   const json = (await res.json()) as ApiResponse<{ avatar: string }>;
   if (!res.ok || !json.success) {
