@@ -2,7 +2,16 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { apiUrl, uploadThumbnail, uploadVideo, vsMovSearch, vsMovGetMovie, vsMovImportMovie, VSMOVSearchItem, VSMOVMovieDetail } from '@/app/lib/api';
+import {
+  apiUrl,
+  uploadThumbnail,
+  uploadVideo,
+  vsMovSearch,
+  vsMovGetMovie,
+  vsMovImportMovie,
+  VSMOVSearchItem,
+  VSMOVMovieDetail,
+} from '@/app/lib/api';
 
 interface Movie {
   id: number;
@@ -20,6 +29,8 @@ interface Movie {
   rating: number;
   views: number;
   is_active: boolean;
+  is_vip?: boolean;
+  required_vip_package_id?: number | null;
   categories: any[];
   created_at: string;
 }
@@ -27,6 +38,23 @@ interface Movie {
 interface Category {
   id: number;
   name: string;
+}
+
+/** Khớp logic slug trên backend (VSMOV) — dùng cho URL phim */
+function generateSlugFromTitle(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[àáạảãâầấậẩẫăằắặẳẫ]/g, 'a')
+    .replace(/[èéẹẻẽêềếệểễ]/g, 'e')
+    .replace(/[ìíịỉĩ]/g, 'i')
+    .replace(/[òóọỏõôồốộổỗơờớợởỡ]/g, 'o')
+    .replace(/[ùúụủũưừứựửữ]/g, 'u')
+    .replace(/[ỳýỵỷỹ]/g, 'y')
+    .replace(/[đ]/g, 'd')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .trim();
 }
 
 export default function AdminMovies() {
@@ -54,6 +82,7 @@ export default function AdminMovies() {
   const [vsMovImportingSlug, setVsMovImportingSlug] = useState<string | null>(null);
   const [vsMovPreview, setVsMovPreview] = useState<VSMOVMovieDetail | null>(null);
   const [vsMovError, setVsMovError] = useState('');
+  const [vsMovVipOnly, setVsMovVipOnly] = useState(false);
 
   const handleVsMovSearch = useCallback(async (keyword: string) => {
     if (!token || keyword.trim().length < 2) return;
@@ -88,12 +117,13 @@ export default function AdminMovies() {
     if (!confirm('Import phim này từ VSMOV vào database?')) return;
     setVsMovImporting(true);
     try {
-      const movie = await vsMovImportMovie(slug, token);
+      const movie = await vsMovImportMovie(slug, token, vsMovVipOnly ? { is_vip: true } : undefined);
       alert('Import thành công!');
       setShowVsMovModal(false);
       setVsMovPreview(null);
       setVsMovQuery('');
       setVsMovResults([]);
+      setVsMovVipOnly(false);
       setShowModal(false);
       await fetchMovies(pagination.page);
     } catch (err: unknown) {
@@ -109,6 +139,7 @@ export default function AdminMovies() {
     setThumbnailMode('url');
     setFormData({
       title: detail.name,
+      slug: detail.slug || generateSlugFromTitle(detail.name),
       description: detail.content || '',
       thumbnail: detail.poster_url || detail.thumb_url || '',
       trailer: detail.trailer_url || '',
@@ -120,6 +151,7 @@ export default function AdminMovies() {
       director: detail.director?.join(', ') || '',
       rating: detail.tmdb?.vote_average ? String(parseFloat(detail.tmdb.vote_average)) : '',
       category_ids: [],
+      is_vip: vsMovVipOnly,
     });
     setShowVsMovModal(false);
     setVsMovPreview(null);
@@ -174,6 +206,7 @@ export default function AdminMovies() {
 
   const [formData, setFormData] = useState({
     title: '',
+    slug: '',
     description: '',
     thumbnail: '',
     trailer: '',
@@ -185,6 +218,8 @@ export default function AdminMovies() {
     director: '',
     rating: '',
     category_ids: [] as number[],
+    /** true = chỉ tài khoản VIP đang hoạt động xem được (mọi gói VIP đều được) */
+    is_vip: false,
   });
 
   const fetchMovies = async (page = 1) => {
@@ -240,6 +275,7 @@ export default function AdminMovies() {
     setVideoMode('url');
     setFormData({
       title: '',
+      slug: '',
       description: '',
       thumbnail: '',
       trailer: '',
@@ -251,6 +287,7 @@ export default function AdminMovies() {
       director: '',
       rating: '',
       category_ids: [],
+      is_vip: false,
     });
     setShowModal(true);
   };
@@ -261,6 +298,7 @@ export default function AdminMovies() {
     setVideoMode(movie.video?.startsWith('/uploads/') ? 'upload' : 'url');
     setFormData({
       title: movie.title,
+      slug: movie.slug || '',
       description: movie.description || '',
       thumbnail: movie.thumbnail || '',
       trailer: movie.trailer || '',
@@ -272,23 +310,40 @@ export default function AdminMovies() {
       director: movie.director || '',
       rating: movie.rating?.toString() || '',
       category_ids: movie.categories?.map((c: any) => c.id) || [],
+      is_vip: Boolean(movie.is_vip || movie.required_vip_package_id != null),
     });
     setShowModal(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const titleTrim = (formData.title || '').trim();
+    const slugRaw = (formData.slug || '').trim();
+    const slug = slugRaw || generateSlugFromTitle(titleTrim);
+    if (!titleTrim) {
+      alert('Vui lòng nhập tiêu đề phim');
+      return;
+    }
+    if (!slug) {
+      alert('Không tạo được slug từ tiêu đề — hãy nhập slug thủ công (chữ thường, gạch ngang)');
+      return;
+    }
     try {
       const url = editingMovie
         ? apiUrl(`/admin/movies/${editingMovie.id}`)
         : apiUrl('/admin/movies');
+      const payload = {
+        ...formData,
+        title: titleTrim,
+        slug,
+      };
       const res = await fetch(url, {
         method: editingMovie ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (data.success) {
@@ -394,6 +449,7 @@ export default function AdminMovies() {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Đánh giá</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lượt xem</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Trạng thái</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">VIP</th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Hành động</th>
                   </tr>
                 </thead>
@@ -433,6 +489,13 @@ export default function AdminMovies() {
                           {movie.is_active ? 'Hoạt động' : 'Khóa'}
                         </span>
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 max-w-[140px]">
+                        {movie.is_vip || movie.required_vip_package_id != null ? (
+                          <span className="text-amber-700 font-medium">Phim VIP</span>
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                         <button onClick={() => openEditModal(movie)} className="text-blue-600 hover:text-blue-900 mr-3">
                           Sửa
@@ -445,7 +508,7 @@ export default function AdminMovies() {
                   ))}
                   {movies.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-12 text-center text-gray-500">Chưa có phim nào</td>
+                      <td colSpan={7} className="px-6 py-12 text-center text-gray-500">Chưa có phim nào</td>
                     </tr>
                   )}
                 </tbody>
@@ -505,7 +568,7 @@ export default function AdminMovies() {
                   <p className="text-xs text-gray-500">Tìm kiếm và import phim từ cơ sở dữ liệu VSMOV</p>
                 </div>
               </div>
-              <button onClick={() => { setShowVsMovModal(false); setVsMovPreview(null); setVsMovQuery(''); setVsMovResults([]); }}
+              <button onClick={() => { setShowVsMovModal(false); setVsMovPreview(null); setVsMovQuery(''); setVsMovResults([]); setVsMovVipOnly(false); }}
                 className="text-gray-400 hover:text-gray-600">
                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -562,6 +625,20 @@ export default function AdminMovies() {
                     {vsMovPreview.content && (
                       <p className="text-sm text-gray-600 line-clamp-3">{vsMovPreview.content}</p>
                     )}
+                    <div className="pt-2 border-t border-gray-100 mt-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={vsMovVipOnly}
+                          onChange={(e) => setVsMovVipOnly(e.target.checked)}
+                          className="rounded border-gray-300 text-green-600 focus:ring-green-500"
+                        />
+                        <span className="text-sm font-medium text-gray-700">Phim chỉ dành cho VIP</span>
+                      </label>
+                      <p className="text-xs text-gray-500 mt-1 ml-6">
+                        Bật: chỉ tài khoản có VIP đang hoạt động xem được (bất kỳ gói tuần/tháng/năm).
+                      </p>
+                    </div>
                     <div className="flex gap-3 pt-2">
                       <button
                         onClick={handleVsMovFillForm}
@@ -691,6 +768,17 @@ export default function AdminMovies() {
                   className="w-full bg-gray-50 text-gray-900 px-4 py-2 rounded-lg border border-gray-300 focus:border-red-500 focus:outline-none" />
               </div>
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Slug (đường dẫn URL)</label>
+                <input
+                  type="text"
+                  value={formData.slug}
+                  onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
+                  placeholder="Để trống sẽ tự tạo từ tiêu đề"
+                  className="w-full bg-gray-50 text-gray-900 px-4 py-2 rounded-lg border border-gray-300 focus:border-red-500 focus:outline-none"
+                />
+                <p className="text-xs text-gray-500 mt-1">Ví dụ: ten-phim-2024 — bắt buộc trên server; để trống sẽ sinh từ tiêu đề.</p>
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Mô tả</label>
                 <textarea rows={3} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full bg-gray-50 text-gray-900 px-4 py-2 rounded-lg border border-gray-300 focus:border-red-500 focus:outline-none" />
@@ -724,9 +812,8 @@ export default function AdminMovies() {
                 ) : (
                   <div className="space-y-2">
                     <label
-                      className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                        thumbnailDragOver ? 'border-red-500 bg-red-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-                      }`}
+                      className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${thumbnailDragOver ? 'border-red-500 bg-red-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+                        }`}
                       onDragOver={(e) => {
                         e.preventDefault();
                         setThumbnailDragOver(true);
@@ -844,9 +931,8 @@ export default function AdminMovies() {
                   ) : (
                     <div className="space-y-2">
                       <label
-                        className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${
-                          videoDragOver ? 'border-red-500 bg-red-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
-                        }`}
+                        className={`flex flex-col items-center justify-center w-full h-32 border-2 border-dashed rounded-lg cursor-pointer transition-colors ${videoDragOver ? 'border-red-500 bg-red-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100'
+                          }`}
                         onDragOver={(e) => {
                           e.preventDefault();
                           setVideoDragOver(true);
@@ -903,8 +989,8 @@ export default function AdminMovies() {
                     className="w-full bg-gray-50 text-gray-900 px-4 py-2 rounded-lg border border-gray-300 focus:border-red-500 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Đánh giá (0-5)</label>
-                  <input type="number" step="0.1" min="0" max="5" value={formData.rating} onChange={(e) => setFormData({ ...formData, rating: e.target.value })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Đánh giá (1-10)</label>
+                  <input type="number" step="0.1" min="1" max="10" value={formData.rating} onChange={(e) => setFormData({ ...formData, rating: e.target.value })}
                     className="w-full bg-gray-50 text-gray-900 px-4 py-2 rounded-lg border border-gray-300 focus:border-red-500 focus:outline-none" />
                 </div>
               </div>
@@ -924,6 +1010,20 @@ export default function AdminMovies() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Diễn viên</label>
                 <input type="text" placeholder="Các diễn viên, cách nhau bởi dấu phẩy" value={formData.actors} onChange={(e) => setFormData({ ...formData, actors: e.target.value })}
                   className="w-full bg-gray-50 text-gray-900 px-4 py-2 rounded-lg border border-gray-300 focus:border-red-500 focus:outline-none" />
+              </div>
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_vip}
+                    onChange={(e) => setFormData({ ...formData, is_vip: e.target.checked })}
+                    className="rounded border-gray-300 text-red-600 focus:ring-red-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Phim chỉ dành cho VIP</span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  Bật: chỉ người có VIP đang hoạt động xem được (mọi gói VIP đều được).
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Thể loại</label>

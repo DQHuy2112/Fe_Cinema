@@ -28,6 +28,7 @@ interface ApiResponse<T> {
   success: boolean;
   message: string;
   data: T;
+  code?: string;
   pagination?: {
     page: number;
     limit: number;
@@ -37,7 +38,11 @@ interface ApiResponse<T> {
 }
 
 class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(
+    public status: number,
+    message: string,
+    public code?: string
+  ) {
     super(message);
     this.name = 'ApiError';
   }
@@ -205,8 +210,8 @@ async function fetchApi<T>(
 
     // Nếu backend báo token hết hạn
     if (json.message?.toLowerCase().includes('expired') ||
-        json.message?.toLowerCase().includes('invalid') ||
-        json.message?.toLowerCase().includes('token')) {
+      json.message?.toLowerCase().includes('invalid') ||
+      json.message?.toLowerCase().includes('token')) {
 
       if (!isRefreshing) {
         isRefreshing = true;
@@ -257,14 +262,14 @@ async function fetchApi<T>(
     throw new ApiError(
       response.status,
       upstreamHint ??
-        (response.ok
-          ? 'Phản hồi API không phải JSON'
-          : text.slice(0, 200) || 'Lỗi không xác định từ máy chủ')
+      (response.ok
+        ? 'Phản hồi API không phải JSON'
+        : text.slice(0, 200) || 'Lỗi không xác định từ máy chủ')
     );
   }
 
   if (!response.ok || !data.success) {
-    throw new ApiError(response.status, data.message || 'Something went wrong');
+    throw new ApiError(response.status, data.message || 'Something went wrong', data.code);
   }
 
   return data.data;
@@ -440,11 +445,23 @@ export async function vsMovGetMovie(slug: string, token: string): Promise<VSMOVM
 }
 
 /** Import phim từ VSMOV vào database (admin) */
-export async function vsMovImportMovie(slug: string, token: string): Promise<any> {
+export async function vsMovImportMovie(
+  slug: string,
+  token: string,
+  opts?: { is_vip?: boolean }
+): Promise<any> {
   const url = apiUrl(`/admin/vsmov/import/${encodeURIComponent(slug)}`);
+  const body: Record<string, unknown> = {};
+  if (opts?.is_vip === true) {
+    body.is_vip = true;
+  }
   const res = await fetch(url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}` },
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
   });
   const json = await res.json() as ApiResponse<any>;
   if (!res.ok || !json.success) {
@@ -707,7 +724,9 @@ export interface VipPackage {
 export interface VipStatus {
   isVip: boolean;
   status: 'active' | 'expired' | 'none';
+  packageId?: number;
   packageName?: string;
+  packageDuration?: number;
   startDate?: string;
   endDate?: string;
   daysRemaining?: number;

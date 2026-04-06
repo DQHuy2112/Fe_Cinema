@@ -7,7 +7,7 @@ import Navbar from '@/app/components/navbar/Navbar';
 import Footer from '@/app/components/footer/Footer';
 import MovieCard from '@/app/components/moviecard/MovieCard';
 import { useAuth } from '@/app/context/AuthContext';
-import { userApi, uploadAvatar } from '@/app/lib/api';
+import { userApi, uploadAvatar, vipApi, type VipStatus } from '@/app/lib/api';
 import { posterSrc } from '@/app/lib/movieUtils';
 import { useToast } from '@/app/components/toast/Toast';
 
@@ -55,6 +55,7 @@ export default function ProfilePage() {
   const [favorites, setFavorites] = useState<ApiMovie[]>([]);
   const [history, setHistory] = useState<ApiMovie[]>([]);
   const [myComments, setMyComments] = useState<ApiComment[]>([]);
+  const [vipStatus, setVipStatus] = useState<VipStatus | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -127,6 +128,12 @@ export default function ProfilePage() {
       setFavorites(Array.isArray(fav) ? fav : []);
       setHistory(Array.isArray(hist) ? hist : []);
       setMyComments(Array.isArray(comments) ? comments : []);
+      try {
+        const vip = await vipApi.getMyVip(token);
+        setVipStatus(vip);
+      } catch {
+        setVipStatus({ isVip: false, status: 'none' });
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Không tải được dữ liệu';
       setLoadError(msg);
@@ -309,6 +316,96 @@ export default function ProfilePage() {
                   <span className="text-gray-500 ml-2">Bình luận</span>
                 </div>
               </div>
+
+              {/* Thành viên VIP */}
+              {!profileLoading && vipStatus && (
+                <div className="mt-6 w-full max-w-xl mx-auto md:mx-0">
+                  {vipStatus.isVip && vipStatus.status === 'active' ? (
+                    <div className="rounded-2xl bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 p-4 sm:p-5 text-[#0f172a] shadow-lg border border-amber-400/50">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-black/10">
+                            <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24" aria-hidden>
+                              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                            </svg>
+                          </span>
+                          <div>
+                            <p className="font-bold text-lg leading-tight">Thành viên VIP</p>
+                            <p className="text-sm text-[#0f172a]/80 mt-0.5">
+                              {vipStatus.packageName ? `${vipStatus.packageName}` : 'Gói VIP'}
+                              {typeof vipStatus.daysRemaining === 'number' && (
+                                <span> · Còn {vipStatus.daysRemaining} ngày</span>
+                              )}
+                            </p>
+                            {vipStatus.endDate && (
+                              <p className="text-xs text-[#0f172a]/65 mt-1">
+                                Hết hạn:{' '}
+                                {new Date(vipStatus.endDate).toLocaleDateString('vi-VN', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric',
+                                })}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <Link
+                          href="/pages/vip"
+                          className="inline-flex items-center justify-center shrink-0 rounded-xl bg-[#0f172a] px-4 py-2.5 text-sm font-semibold text-white hover:bg-black transition-colors"
+                        >
+                          Gia hạn / gói khác
+                        </Link>
+                      </div>
+                    </div>
+                  ) : vipStatus.status === 'expired' ? (
+                    <div className="rounded-2xl border-2 border-orange-200 bg-orange-50 p-4 sm:p-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-200 text-orange-800">
+                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </span>
+                          <div>
+                            <p className="font-semibold text-gray-900">VIP đã hết hạn</p>
+                            <p className="text-sm text-gray-600 mt-0.5">Gia hạn để tiếp tục xem phim VIP.</p>
+                          </div>
+                        </div>
+                        <Link
+                          href="/pages/vip"
+                          className="inline-flex items-center justify-center shrink-0 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
+                        >
+                          Gia hạn VIP
+                        </Link>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border-2 border-dashed border-gray-300 bg-gray-50/80 p-4 sm:p-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gray-200 text-gray-500">
+                            <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                            </svg>
+                          </span>
+                          <div>
+                            <p className="font-semibold text-gray-900">Chưa có VIP</p>
+                            <p className="text-sm text-gray-600 mt-0.5">
+                              Mua gói VIP để xem phim độc quyền và không quảng cáo.
+                            </p>
+                          </div>
+                        </div>
+                        <Link
+                          href="/pages/vip"
+                          className="inline-flex items-center justify-center shrink-0 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700 transition-colors"
+                        >
+                          Xem gói VIP
+                        </Link>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <button

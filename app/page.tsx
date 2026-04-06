@@ -5,8 +5,79 @@ import Link from 'next/link';
 import Navbar from './components/navbar/Navbar';
 import Footer from './components/footer/Footer';
 import MovieCard from './components/moviecard/MovieCard';
-import { movieApi } from './lib/api';
+import { movieApi, categoryApi } from './lib/api';
 import { heroImageSources } from './lib/movieUtils';
+
+interface HomeCategory {
+  id: number;
+  name: string;
+  slug: string;
+}
+
+/** Gán icon / màu theo slug hoặc tên (tiếng Việt / tiếng Anh); không khớp thì xoay theo chỉ số */
+function getCategoryVisual(slug: string, name: string, index: number): { icon: string; color: string } {
+  const s = slug.toLowerCase().trim();
+  const n = name.toLowerCase();
+
+  const map: Record<string, { icon: string; color: string }> = {
+    'hanh-dong': { icon: '🔥', color: 'bg-red-50 text-red-600 hover:bg-red-100' },
+    action: { icon: '🔥', color: 'bg-red-50 text-red-600 hover:bg-red-100' },
+    'hai-huoc': { icon: '😂', color: 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100' },
+    comedy: { icon: '😂', color: 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100' },
+    'tinh-cam': { icon: '💕', color: 'bg-pink-50 text-pink-600 hover:bg-pink-100' },
+    romance: { icon: '💕', color: 'bg-pink-50 text-pink-600 hover:bg-pink-100' },
+    'kinh-di': { icon: '👻', color: 'bg-purple-50 text-purple-600 hover:bg-purple-100' },
+    horror: { icon: '👻', color: 'bg-purple-50 text-purple-600 hover:bg-purple-100' },
+    'khoa-hoc': { icon: '🚀', color: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
+    'khoa-hoc-vien-tuong': { icon: '🚀', color: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
+    'sci-fi': { icon: '🚀', color: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
+    scifi: { icon: '🚀', color: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
+    'chien-tranh': { icon: '⚔️', color: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
+    war: { icon: '⚔️', color: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
+    'phieu-luu': { icon: '🌟', color: 'bg-orange-50 text-orange-600 hover:bg-orange-100' },
+    adventure: { icon: '🌟', color: 'bg-orange-50 text-orange-600 hover:bg-orange-100' },
+    'than-thoai': { icon: '🧙', color: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' },
+    fantasy: { icon: '🧙', color: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' },
+    'hoat-hinh': { icon: '🎬', color: 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100' },
+    animation: { icon: '🎬', color: 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100' },
+    'tai-lieu': { icon: '📹', color: 'bg-stone-50 text-stone-600 hover:bg-stone-100' },
+    documentary: { icon: '📹', color: 'bg-stone-50 text-stone-600 hover:bg-stone-100' },
+    'gia-dinh': { icon: '👨‍👩‍👧', color: 'bg-rose-50 text-rose-600 hover:bg-rose-100' },
+    family: { icon: '👨‍👩‍👧', color: 'bg-rose-50 text-rose-600 hover:bg-rose-100' },
+    'toi-pham': { icon: '🔍', color: 'bg-slate-50 text-slate-700 hover:bg-slate-100' },
+    crime: { icon: '🔍', color: 'bg-slate-50 text-slate-700 hover:bg-slate-100' },
+    'lich-su': { icon: '📜', color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+    history: { icon: '📜', color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+  };
+
+  if (map[s]) return map[s];
+
+  if (n.includes('hành động')) return map['hanh-dong'];
+  if (n.includes('hài') || n.includes('comedy')) return map['hai-huoc'];
+  if (n.includes('tình cảm') || n.includes('romance')) return map['tinh-cam'];
+  if (n.includes('kinh dị') || n.includes('horror')) return map['kinh-di'];
+  if (n.includes('khoa học') || n.includes('sci')) return map['khoa-hoc'];
+  if (n.includes('chiến tranh') || n.includes('war')) return map['chien-tranh'];
+  if (n.includes('phiêu lưu') || n.includes('adventure')) return map['phieu-luu'];
+  if (n.includes('thần thoại') || n.includes('fantasy')) return map['than-thoai'];
+  if (n.includes('hoạt hình') || n.includes('animation')) return map['hoat-hinh'];
+  if (n.includes('tài liệu') || n.includes('documentary')) return map['tai-lieu'];
+  if (n.includes('gia đình') || n.includes('family')) return map['gia-dinh'];
+
+  const fallbacks = [
+    { icon: '🎬', color: 'bg-red-50 text-red-600 hover:bg-red-100' },
+    { icon: '🎭', color: 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100' },
+    { icon: '💫', color: 'bg-pink-50 text-pink-600 hover:bg-pink-100' },
+    { icon: '🌙', color: 'bg-purple-50 text-purple-600 hover:bg-purple-100' },
+    { icon: '✨', color: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
+    { icon: '🎪', color: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
+    { icon: '🗺️', color: 'bg-orange-50 text-orange-600 hover:bg-orange-100' },
+    { icon: '🔮', color: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' },
+    { icon: '📽️', color: 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100' },
+    { icon: '🎥', color: 'bg-indigo-50 text-indigo-600 hover:bg-indigo-100' },
+  ];
+  return fallbacks[index % fallbacks.length];
+}
 
 interface Movie {
   id: number;
@@ -30,6 +101,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [heroMovie, setHeroMovie] = useState<Movie | null>(null);
+  const [homeCategories, setHomeCategories] = useState<HomeCategory[]>([]);
   const trendingRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -37,15 +109,25 @@ export default function Home() {
       setLoading(true);
       setError(null);
 
-      const [trending, featured, newMoviesList] = await Promise.allSettled([
+      const [trending, featured, newMoviesList, categoriesRes] = await Promise.allSettled([
         movieApi.getTrendingMovies(10),
         movieApi.getMovies({ limit: 10, sortBy: 'rating', order: 'DESC' }),
         movieApi.getMovies({ limit: 15, sortBy: 'updated_at', order: 'DESC' }),
+        categoryApi.getCategories(),
       ]);
 
       const trendingData = trending.status === 'fulfilled' ? (Array.isArray(trending.value) ? trending.value : []) : [];
       const featuredData = featured.status === 'fulfilled' ? (Array.isArray(featured.value) ? featured.value : []) : [];
       const newData = newMoviesList.status === 'fulfilled' ? (Array.isArray(newMoviesList.value) ? newMoviesList.value : []) : [];
+
+      if (categoriesRes.status === 'fulfilled' && Array.isArray(categoriesRes.value)) {
+        const list = categoriesRes.value
+          .filter((c: HomeCategory) => c && typeof c.slug === 'string' && c.slug.length > 0)
+          .slice(0, 10);
+        setHomeCategories(list);
+      } else {
+        setHomeCategories([]);
+      }
 
       setTrendingMovies(trendingData);
       setFeaturedMovies(featuredData);
@@ -399,28 +481,31 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Category Pills */}
-          <div className="flex flex-wrap gap-3">
-            {[
-              { name: 'Hành Động', icon: '🔥', color: 'bg-red-50 text-red-600 hover:bg-red-100' },
-              { name: 'Hài Hước', icon: '😂', color: 'bg-yellow-50 text-yellow-600 hover:bg-yellow-100' },
-              { name: 'Tình Cảm', icon: '💕', color: 'bg-pink-50 text-pink-600 hover:bg-pink-100' },
-              { name: 'Kinh Dị', icon: '👻', color: 'bg-purple-50 text-purple-600 hover:bg-purple-100' },
-              { name: 'Khoa Học', icon: '🚀', color: 'bg-blue-50 text-blue-600 hover:bg-blue-100' },
-              { name: 'Chiến Tranh', icon: '⚔️', color: 'bg-gray-100 text-gray-700 hover:bg-gray-200' },
-              { name: 'Phiêu Lưu', icon: '🌟', color: 'bg-orange-50 text-orange-600 hover:bg-orange-100' },
-              { name: 'Thần Thoại', icon: '🧙', color: 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' },
-            ].map((category) => (
-              <Link
-                key={category.name}
-                href={`/pages/categories?category=${encodeURIComponent(category.name)}`}
-                className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl font-medium text-sm transition-all duration-300 ${category.color}`}
-              >
-                <span>{category.icon}</span>
-                <span>{category.name}</span>
+          {/* Category Pills — tối đa 10 thể loại từ API */}
+          {homeCategories.length === 0 ? (
+            <p className="text-[#64748b] text-sm">
+              Chưa có thể loại nào.{' '}
+              <Link href="/pages/categories" className="text-[#f20d0d] font-medium hover:underline">
+                Xem trang thể loại
               </Link>
-            ))}
-          </div>
+            </p>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {homeCategories.map((category, index) => {
+                const { icon, color } = getCategoryVisual(category.slug, category.name, index);
+                return (
+                  <Link
+                    key={category.id}
+                    href={`/pages/categories?category=${encodeURIComponent(category.slug)}`}
+                    className={`inline-flex items-center gap-2 px-5 py-3 rounded-xl font-medium text-sm transition-all duration-300 ${color}`}
+                  >
+                    <span>{icon}</span>
+                    <span>{category.name}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
       </section>
 

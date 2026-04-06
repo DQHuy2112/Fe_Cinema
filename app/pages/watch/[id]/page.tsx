@@ -5,9 +5,7 @@ import Link from 'next/link';
 import { movieApi, userApi } from '@/app/lib/api';
 import MovieCommentsSection from '@/app/components/moviecomments/MovieCommentsSection';
 import VideoPlayer from '@/app/components/videoplayer/VideoPlayer';
-import MovieCard from '@/app/components/moviecard/MovieCard';
 import { useAuth } from '@/app/context/AuthContext';
-import { useToast } from '@/app/components/toast/Toast';
 
 interface WatchMovie {
   id: number;
@@ -26,17 +24,19 @@ interface WatchMovie {
   views: number;
   is_vip?: boolean;
   categories?: { id: number; name: string; slug: string }[];
+  can_play?: boolean;
+  play_restriction_message?: string | null;
 }
 
 export default function WatchPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { user, token } = useAuth();
-  const { showToast } = useToast();
+  const { token } = useAuth();
   const [movie, setMovie] = useState<WatchMovie | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [relatedMovies, setRelatedMovies] = useState<any[]>([]);
+  const [relatedMovies, setRelatedMovies] = useState<WatchMovie[]>([]);
   const [historyRecorded, setHistoryRecorded] = useState(false);
+  const [vipModalOpen, setVipModalOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -51,17 +51,13 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
         if (data.categories && data.categories.length > 0) {
           try {
             const catMovies = await movieApi.getMovies({ category: data.categories[0].slug, limit: 5 });
-            setRelatedMovies(catMovies.filter((m: any) => m.id !== data.id).slice(0, 4));
+            setRelatedMovies(catMovies.filter((m: WatchMovie) => m.id !== data.id).slice(0, 4));
           } catch {
             // Ignore related movies error
           }
         }
-      } catch (err: any) {
-        if (err.status === 403 && err.code === 'VIP_REQUIRED') {
-          setError('VIP_REQUIRED');
-        } else {
-          setError(err.message || 'Không tìm thấy phim');
-        }
+      } catch (err: unknown) {
+        setError(err instanceof Error ? err.message : 'Không tìm thấy phim');
       } finally {
         setLoading(false);
       }
@@ -70,20 +66,25 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
     fetchMovie();
   }, [id]);
 
-  // Tự động ghi nhận lịch sử xem khi vào trang watch
   useEffect(() => {
-    if (!token || !id || historyRecorded) return;
-    userApi.addToWatchHistory
-      ? (async () => {
-          try {
-            await userApi.addToWatchHistory(token, Number(id));
-            setHistoryRecorded(true);
-          } catch {
-            // Ignore history recording error silently
-          }
-        })()
-      : null;
-  }, [token, id, historyRecorded]);
+    if (movie && movie.can_play === false) {
+      setVipModalOpen(true);
+    }
+  }, [movie]);
+
+  useEffect(() => {
+    if (!token || !id || historyRecorded || !movie || movie.can_play === false) return;
+    if (userApi.addToWatchHistory) {
+      (async () => {
+        try {
+          await userApi.addToWatchHistory(token, Number(id));
+          setHistoryRecorded(true);
+        } catch {
+          // Ignore history recording error silently
+        }
+      })();
+    }
+  }, [token, id, historyRecorded, movie]);
 
   if (loading) {
     return (
@@ -94,36 +95,6 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   }
 
   if (error || !movie) {
-    if (error === 'VIP_REQUIRED') {
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1a1a2e] to-[#0f172a] flex flex-col items-center justify-center text-center px-6">
-          <div className="w-24 h-24 bg-[#f20d0d]/20 rounded-full flex items-center justify-center mb-8">
-            <svg className="w-12 h-12 text-[#f20d0d]" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-            </svg>
-          </div>
-          <h1 className="text-white text-3xl font-black mb-4">Phim yêu cầu VIP</h1>
-          <p className="text-white/60 text-base max-w-md mb-10">
-            Phim này chỉ dành cho thành viên VIP. Hãy mua gói VIP để truy cập toàn bộ kho phim VIP chất lượng cao.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-4">
-            <Link
-              href="/pages/vip"
-              className="px-8 py-4 bg-[#f20d0d] text-white font-bold rounded-2xl hover:bg-[#d90a0a] transition-colors text-lg"
-            >
-              Mua gói VIP ngay
-            </Link>
-            <Link
-              href="/"
-              className="px-8 py-4 bg-white/10 text-white font-semibold rounded-2xl hover:bg-white/20 transition-colors text-lg border border-white/20"
-            >
-              Quay về trang chủ
-            </Link>
-          </div>
-        </div>
-      );
-    }
-
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center text-center px-4">
         <svg className="w-20 h-20 text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -143,10 +114,48 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
   };
 
   const videoUrl = movie.video;
+  const canPlay = movie.can_play !== false;
+  const vipModalText = movie.play_restriction_message?.trim() || 'Bạn cần gói VIP phù hợp để xem phim này.';
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+      {vipModalOpen && !canPlay && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="watch-vip-modal-title"
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h2 id="watch-vip-modal-title" className="text-lg font-semibold text-gray-900 mb-3">
+              Không thể xem phim
+            </h2>
+            <p className="text-red-600 text-sm leading-relaxed">{vipModalText}</p>
+            <div className="mt-6 flex flex-wrap gap-3 justify-end">
+              <Link
+                href={`/pages/movie/${movie.id}`}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm"
+              >
+                Về trang chi tiết
+              </Link>
+              <button
+                type="button"
+                onClick={() => setVipModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm"
+              >
+                Đóng
+              </button>
+              <Link
+                href="/pages/vip"
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 font-medium text-sm"
+              >
+                Mua gói VIP
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
       <header className="fixed top-0 left-0 right-0 z-50 bg-white shadow-md border-b border-gray-200">
         <div className="flex items-center justify-between h-14 px-4">
           <div className="flex items-center gap-3">
@@ -162,11 +171,12 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
               </svg>
             </Link>
+          </div>
+          <div className="flex items-center gap-3 overflow-hidden">
             <div className="overflow-hidden">
               <h1 className="text-gray-800 font-medium text-sm md:text-base truncate max-w-[200px] md:max-w-[300px]">{movie.title}</h1>
             </div>
           </div>
-
           <div className="flex items-center gap-3">
             {movie.rating != null && movie.rating > 0 && (
               <div className="flex items-center gap-1 text-yellow-500 text-sm">
@@ -187,21 +197,35 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
         </div>
       </header>
 
-      {/* Video Player */}
       <div className="pt-14">
-        <VideoPlayer
-          url={videoUrl || ''}
-          poster={movie.thumbnail}
-          title={movie.title}
-        />
+        {!canPlay ? (
+          <div className="w-full min-h-[50vh] bg-gradient-to-b from-gray-900 to-black flex flex-col items-center justify-center text-center px-6 py-16">
+            <div className="w-20 h-20 rounded-full bg-red-600/20 flex items-center justify-center mb-4">
+              <svg className="w-10 h-10 text-red-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+            </div>
+            <p className="text-white/80 text-sm max-w-md mb-4">Nội dung phim chỉ dành cho gói VIP phù hợp.</p>
+            <button
+              type="button"
+              onClick={() => setVipModalOpen(true)}
+              className="px-6 py-2.5 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 transition-colors"
+            >
+              Xem thông báo chi tiết
+            </button>
+          </div>
+        ) : videoUrl ? (
+          <VideoPlayer url={videoUrl} poster={movie.thumbnail} title={movie.title} />
+        ) : (
+          <div className="w-full min-h-[40vh] bg-gray-900 flex flex-col items-center justify-center text-center px-6 text-white/50 text-sm">
+            Chưa có video cho phim này.
+          </div>
+        )}
       </div>
 
-      {/* Content */}
       <div className="max-w-7xl mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Content */}
           <div className="lg:col-span-2">
-            {/* Movie Info */}
             <div className="mb-8 bg-white rounded-xl p-6 shadow-sm border border-gray-200">
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-3">
                 <h2 className="text-2xl font-bold text-gray-900">{movie.title}</h2>
@@ -270,7 +294,7 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
               )}
             </div>
 
-            {!videoUrl && (
+            {!videoUrl && canPlay && (
               <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 mb-8 text-center">
                 <svg className="w-12 h-12 text-gray-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.893L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
@@ -292,7 +316,6 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
             <MovieCommentsSection movieId={movie.id} variant="light" heading="Đánh giá phim" />
           </div>
 
-          {/* Sidebar - Related Movies */}
           <div>
             {relatedMovies.length > 0 && (
               <div className="bg-white rounded-xl p-5 shadow-sm border border-gray-200">
@@ -322,25 +345,25 @@ export default function WatchPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               </div>
             )}
-
-            {movie.categories && movie.categories.length > 0 && (
-              <div className="mt-6 bg-white rounded-xl p-5 shadow-sm border border-gray-200">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">Thể loại</h3>
-                <div className="flex flex-wrap gap-2">
-                  {movie.categories.map((cat) => (
-                    <Link
-                      key={cat.id}
-                      href={`/pages/categories?category=${cat.slug}`}
-                      className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-full hover:bg-gray-200 transition-colors"
-                    >
-                      {cat.name}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
+
+        {movie.categories && movie.categories.length > 0 && (
+          <div className="mt-6 bg-white rounded-xl p-5 shadow-sm border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Thể loại</h3>
+            <div className="flex flex-wrap gap-2">
+              {movie.categories.map((cat) => (
+                <Link
+                  key={cat.id}
+                  href={`/pages/categories?category=${cat.slug}`}
+                  className="px-3 py-1.5 bg-gray-100 text-gray-600 text-xs rounded-full hover:bg-gray-200 transition-colors"
+                >
+                  {cat.name}
+                </Link>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

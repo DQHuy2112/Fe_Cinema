@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useState, useEffect, useMemo } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Navbar from '@/app/components/navbar/Navbar';
 import Footer from '@/app/components/footer/Footer';
 import MovieCard from '@/app/components/moviecard/MovieCard';
@@ -31,14 +31,21 @@ interface Movie {
   rating?: number;
   is_active: boolean;
   is_vip?: boolean;
+  required_vip_package_id?: number | null;
+  required_vip_package?: { id: number; name: string; duration: number } | null;
   categories?: { id: number; name: string; slug: string }[];
+  /** false khi chưa đủ VIP — vẫn xem được trang chi tiết, không có URL video */
+  can_play?: boolean;
+  play_restriction_message?: string | null;
 }
 
 export default function MovieDetail() {
   const params = useParams();
+  const router = useRouter();
   const id = params?.id as string;
 
   const [movie, setMovie] = useState<Movie | null>(null);
+  const [vipModalOpen, setVipModalOpen] = useState(false);
   const [similarMovies, setSimilarMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,7 +102,7 @@ export default function MovieDetail() {
         const ids = Array.isArray(favs) ? favs.map((f: any) => f.id) : [];
         setIsFavorite(ids.includes(Number(id)));
       })
-      .catch(() => {});
+      .catch(() => { });
   }, [token, id]);
 
   const handleToggleFavorite = async () => {
@@ -124,6 +131,19 @@ export default function MovieDetail() {
     return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
   };
 
+  const handleWatchClick = () => {
+    if (!movie) return;
+    if (movie.can_play === false) {
+      setVipModalOpen(true);
+      return;
+    }
+    router.push(`/pages/watch/${movie.id}`);
+  };
+
+  const vipModalText =
+    movie?.play_restriction_message?.trim() ||
+    'Bạn cần gói VIP phù hợp để xem phim này.';
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -147,6 +167,37 @@ export default function MovieDetail() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar />
+
+      {vipModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="vip-modal-title"
+        >
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h2 id="vip-modal-title" className="text-lg font-semibold text-gray-900 mb-3">
+              Không thể xem phim
+            </h2>
+            <p className="text-red-600 text-sm leading-relaxed">{vipModalText}</p>
+            <div className="mt-6 flex flex-wrap gap-3 justify-end">
+              <button
+                type="button"
+                onClick={() => setVipModalOpen(false)}
+                className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 font-medium text-sm"
+              >
+                Đóng
+              </button>
+              <Link
+                href="/pages/vip"
+                className="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 font-medium text-sm"
+              >
+                Mua gói VIP
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* hero Banner */}
       <section className="relative pt-16 overflow-hidden">
@@ -178,7 +229,7 @@ export default function MovieDetail() {
             <div className="flex-1">
               <h1 className="text-3xl md:text-5xl font-bold text-white mb-4 flex items-center gap-3 flex-wrap">
                 {movie.title}
-                {movie.is_vip && (
+                {(movie.is_vip || movie.required_vip_package_id != null) && (
                   <span className="inline-flex items-center gap-1 bg-yellow-400 text-[#0f172a] text-xs font-bold px-3 py-1 rounded-full">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -191,7 +242,7 @@ export default function MovieDetail() {
               <div className="flex flex-wrap items-center gap-4 text-gray-300 mb-6">
                 <span className="flex items-center gap-1">
                   <svg className="w-5 h-5 text-yellow-400" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                   </svg>
                   <span className="font-bold text-white">{movie.rating || 'N/A'}</span>
                 </span>
@@ -218,21 +269,22 @@ export default function MovieDetail() {
               </p>
 
               <div className="flex flex-wrap gap-4 mb-4">
-                <Link
-                  href={`/pages/watch/${movie.id}`}
+                <button
+                  type="button"
+                  onClick={handleWatchClick}
                   className="bg-red-600 hover:bg-red-700 text-white px-8 py-3 rounded-lg font-medium flex items-center gap-2 transition-colors"
                 >
                   <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z"/>
+                    <path d="M8 5v14l11-7z" />
                   </svg>
                   Xem phim
-                </Link>
-                {movie.is_vip && (
+                </button>
+                {(movie.is_vip || movie.required_vip_package_id != null) && (
                   <div className="flex items-center gap-2 bg-yellow-400/10 border border-yellow-400/30 text-yellow-400 px-4 py-3 rounded-lg text-sm font-medium">
                     <svg className="w-4 h-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                     </svg>
-                    Yêu cầu gói VIP
+                    Dành cho thành viên VIP
                   </div>
                 )}
                 <button
@@ -247,7 +299,7 @@ export default function MovieDetail() {
                     </svg>
                   ) : isFavorite ? (
                     <svg className="w-5 h-5 text-red-400" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                     </svg>
                   ) : (
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -283,31 +335,28 @@ export default function MovieDetail() {
                 <nav className="flex gap-8">
                   <button
                     onClick={() => setActiveTab('info')}
-                    className={`py-4 border-b-2 font-medium transition-colors ${
-                      activeTab === 'info'
+                    className={`py-4 border-b-2 font-medium transition-colors ${activeTab === 'info'
                         ? 'border-red-600 text-white'
                         : 'border-transparent text-gray-400 hover:text-white'
-                    }`}
+                      }`}
                   >
                     Thông tin
                   </button>
                   <button
                     onClick={() => setActiveTab('cast')}
-                    className={`py-4 border-b-2 font-medium transition-colors ${
-                      activeTab === 'cast'
+                    className={`py-4 border-b-2 font-medium transition-colors ${activeTab === 'cast'
                         ? 'border-red-600 text-white'
                         : 'border-transparent text-gray-400 hover:text-white'
-                    }`}
+                      }`}
                   >
                     Diễn viên
                   </button>
                   <button
                     onClick={() => setActiveTab('reviews')}
-                    className={`py-4 border-b-2 font-medium transition-colors ${
-                      activeTab === 'reviews'
+                    className={`py-4 border-b-2 font-medium transition-colors ${activeTab === 'reviews'
                         ? 'border-red-600 text-white'
                         : 'border-transparent text-gray-400 hover:text-white'
-                    }`}
+                      }`}
                   >
                     Đánh giá
                   </button>

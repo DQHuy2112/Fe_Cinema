@@ -1,53 +1,80 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
-import { apiUrl } from '@/app/lib/api';
+import { apiUrl, AUTH_ACCESS_TOKEN_REFRESHED_EVENT } from '@/app/lib/api';
 
 interface Stats {
   movieCount: number;
   userCount: number;
   commentCount: number;
   categoryCount: number;
-  recentMovies: any[];
+  recentMovies: DashboardMovie[];
 }
 
-interface Movie {
+interface DashboardMovie {
   id: number;
   title: string;
-  thumbnail: string;
-  rating: number;
-  views: number;
-  is_active: boolean;
-  categories: any[];
+  thumbnail?: string | null;
+  rating?: number | string | null;
+  views?: number;
+  is_active?: boolean;
+  categories?: { id: number; name: string }[];
 }
 
 export default function AdminDashboard() {
   const { token } = useAuth();
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchStats = useCallback(async () => {
+    if (!token?.trim()) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(apiUrl('/admin/dashboard'), {
+        headers: {
+          Authorization: `Bearer ${token.trim()}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setStats(null);
+        setError(typeof data.message === 'string' ? data.message : 'Không tải được dữ liệu dashboard.');
+        return;
+      }
+      const d = data.data as Stats;
+      setStats({
+        movieCount: Number(d?.movieCount) || 0,
+        userCount: Number(d?.userCount) || 0,
+        commentCount: Number(d?.commentCount) || 0,
+        categoryCount: Number(d?.categoryCount) || 0,
+        recentMovies: Array.isArray(d?.recentMovies) ? d.recentMovies : [],
+      });
+    } catch (e) {
+      console.error('Failed to fetch stats:', e);
+      setStats(null);
+      setError('Lỗi mạng hoặc máy chủ. Hãy kiểm tra backend đang chạy.');
+    } finally {
+      setLoading(false);
+    }
+  }, [token]);
 
   useEffect(() => {
-    const fetchStats = async () => {
-      try {
-        const res = await fetch(apiUrl('/admin/dashboard'), {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const data = await res.json();
-        if (data.success) {
-          setStats(data.data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch stats:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchStats();
-  }, [token]);
+  }, [fetchStats]);
+
+  useEffect(() => {
+    const onRefreshed = () => {
+      fetchStats();
+    };
+    window.addEventListener(AUTH_ACCESS_TOKEN_REFRESHED_EVENT, onRefreshed);
+    return () => window.removeEventListener(AUTH_ACCESS_TOKEN_REFRESHED_EVENT, onRefreshed);
+  }, [fetchStats]);
 
   if (loading) {
     return (
@@ -59,7 +86,23 @@ export default function AdminDashboard() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Dashboard</h1>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <button
+          type="button"
+          onClick={() => fetchStats()}
+          disabled={loading || !token}
+          className="inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-semibold bg-white border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          {loading ? 'Đang tải…' : 'Làm mới'}
+        </button>
+      </div>
+
+      {error && (
+        <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -137,7 +180,7 @@ export default function AdminDashboard() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {stats?.recentMovies?.map((movie: Movie) => (
+              {stats?.recentMovies?.map((movie: DashboardMovie) => (
                 <tr key={movie.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-3">

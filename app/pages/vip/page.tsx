@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/app/context/AuthContext';
 import { useRouter } from 'next/navigation';
+import Navbar from '@/app/components/navbar/Navbar';
 import { vipApi, VipPackage, VipStatus } from '@/app/lib/api';
 
 type MoMoSubMethod = 'captureWallet' | 'payWithATM' | 'payWithCC';
@@ -17,6 +18,35 @@ function formatDuration(days: number): string {
   if (days === 30) return '30 ngày';
   if (days === 365) return '365 ngày';
   return `${days} ngày`;
+}
+
+/** Không dùng ảnh ngoài (Wikimedia hay chặn hotlink → icon vỡ) */
+function VnpayMark({ light }: { light?: boolean }) {
+  if (light) {
+    return (
+      <span className="inline-flex items-baseline font-black text-base tracking-tighter leading-none select-none" aria-hidden>
+        <span className="text-sky-200">VN</span>
+        <span className="text-white">PAY</span>
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-baseline font-black text-base tracking-tighter leading-none select-none" aria-hidden>
+      <span className="text-[#005baa]">VN</span>
+      <span className="text-[#e31837]">PAY</span>
+    </span>
+  );
+}
+
+function MomoMark({ light }: { light?: boolean }) {
+  return (
+    <span
+      className={`font-bold text-base tracking-tight leading-none select-none ${light ? 'text-pink-100' : 'text-[#a50064]'}`}
+      aria-hidden
+    >
+      MoMo
+    </span>
+  );
 }
 
 function MoMoMethodSelector({
@@ -56,11 +86,10 @@ function MoMoMethodSelector({
           key={m.value}
           type="button"
           onClick={() => onChange(m.value)}
-          className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-semibold border-2 transition-all ${
-            value === m.value
+          className={`flex-1 flex flex-col items-center gap-1 py-2.5 rounded-xl text-xs font-semibold border-2 transition-all ${value === m.value
               ? 'border-[#a50064] bg-[#a50064]/5 text-[#a50064]'
               : `border-[#e2e8f0] ${isDark ? 'bg-white/10 text-white/70 border-white/20' : 'bg-white text-[#475569] border-[#e2e8f0]'} hover:border-[#a50064]/50`
-          }`}
+            }`}
         >
           <span className="text-base">{m.icon}</span>
           <span className="leading-tight text-center">{m.label}</span>
@@ -76,6 +105,8 @@ function PackageCard({
   onBuy,
   isLoading,
   isVip,
+  currentPackageId,
+  currentPackageDuration,
   paymentMethod,
   onPaymentMethodChange,
   momoMethod,
@@ -85,6 +116,9 @@ function PackageCard({
   onBuy: () => void;
   isLoading: boolean;
   isVip: boolean;
+  /** Ưu tiên so khớp gói đang dùng (tránh lệch khi có nhiều gói cùng duration) */
+  currentPackageId?: number;
+  currentPackageDuration?: number;
   paymentMethod: PayMethod;
   onPaymentMethodChange: (m: PayMethod) => void;
   momoMethod: MoMoSubMethod;
@@ -93,24 +127,40 @@ function PackageCard({
   const isBest = pkg.duration === 365;
   const isPopular = pkg.duration === 30;
 
+  const isCurrentPackage =
+    isVip &&
+    (currentPackageId !== undefined
+      ? pkg.id === currentPackageId
+      : currentPackageDuration !== undefined && pkg.duration === currentPackageDuration);
+
+  // Chỉ khóa gói có thời hạn ngắn hơn gói đang dùng (không dùng <= vì sẽ đánh dấu nhầm cả tuần + tháng)
+  const isLowerTierLocked =
+    isVip &&
+    currentPackageDuration !== undefined &&
+    pkg.duration < currentPackageDuration;
+
+  const isGreyedOut = isCurrentPackage || isLowerTierLocked;
+  const isUpgradeTier = isVip && currentPackageDuration !== undefined && pkg.duration > currentPackageDuration;
+
   return (
     <div
-      className={`relative flex flex-col rounded-3xl p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl ${
-        isBest
-          ? 'bg-gradient-to-br from-[#f20d0d] to-[#b30808] text-white shadow-[0_8px_40px_rgba(242,13,13,0.35)]'
-          : isPopular
-          ? 'bg-white text-[#0f172a] shadow-xl border-2 border-[#f20d0d]'
-          : 'bg-white text-[#0f172a] shadow-lg border border-[#e2e8f0] hover:border-[#f20d0d]'
-      }`}
+      className={`relative flex flex-col rounded-3xl p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl ${isGreyedOut
+          ? 'bg-[#f1f5f9] text-[#94a3b8]'
+          : isBest
+            ? 'bg-gradient-to-br from-[#f20d0d] to-[#b30808] text-white shadow-[0_8px_40px_rgba(242,13,13,0.35)]'
+            : isPopular
+              ? 'bg-white text-[#0f172a] shadow-xl border-2 border-[#f20d0d]'
+              : 'bg-white text-[#0f172a] shadow-lg border border-[#e2e8f0] hover:border-[#f20d0d]'
+        }`}
     >
-      {isBest && (
+      {isBest && !isGreyedOut && (
         <div className="absolute -top-4 left-1/2 -translate-x-1/2">
           <span className="bg-yellow-400 text-[#0f172a] text-xs font-bold px-5 py-1.5 rounded-full shadow-lg">
             TIẾT KIỆM NHẤT
           </span>
         </div>
       )}
-      {isPopular && (
+      {isPopular && !isGreyedOut && (
         <div className="absolute -top-4 left-1/2 -translate-x-1/2">
           <span className="bg-[#f20d0d] text-white text-xs font-bold px-5 py-1.5 rounded-full shadow-lg">
             PHỔ BIẾN NHẤT
@@ -122,7 +172,7 @@ function PackageCard({
         <h3 className={`text-2xl font-bold mb-1 ${isBest ? 'text-white' : 'text-[#0f172a]'}`}>
           {pkg.name}
         </h3>
-        <div className={`text-4xl font-black ${isBest ? 'text-white' : 'text-[#f20d0d]'}`}>
+        <div className={`text-4xl font-black ${isGreyedOut ? 'line-through opacity-50' : isBest ? 'text-white' : 'text-[#f20d0d]'}`}>
           {formatPrice(pkg.price)}
         </div>
         <div className={`text-sm mt-1 ${isBest ? 'text-white/80' : 'text-[#64748b]'}`}>
@@ -152,7 +202,7 @@ function PackageCard({
       </div>
 
       {/* Payment method selector */}
-      {!isVip && (
+      {(!isVip || isUpgradeTier) && !isGreyedOut && (
         <div className={`mb-4 p-4 rounded-2xl ${isBest ? 'bg-white/15' : 'bg-[#f8fafc]'}`}>
           <p className={`text-xs font-semibold mb-3 ${isBest ? 'text-white/80' : 'text-[#64748b]'}`}>
             Chọn cổng thanh toán
@@ -161,24 +211,24 @@ function PackageCard({
             <button
               type="button"
               onClick={() => onPaymentMethodChange('vnpay')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm border-2 transition-all ${
-                paymentMethod === 'vnpay'
+              aria-label="Thanh toán qua VNPay"
+              className={`flex-1 flex items-center justify-center min-h-[44px] py-2.5 rounded-xl font-semibold text-sm border-2 transition-all ${paymentMethod === 'vnpay'
                   ? 'border-[#f20d0d] bg-[#f20d0d]/5 text-[#f20d0d]'
                   : `border-[#e2e8f0] ${isBest ? 'bg-white/10 text-white/70 border-white/20' : 'bg-white text-[#475569] border-[#e2e8f0]'} hover:border-[#f20d0d]/50`
-              }`}
+                }`}
             >
-              <img src="https://upload.wikimedia.org/wikipedia/commons/5/5e/VNPAY_logo.svg" alt="VNPay" className="h-5 object-contain" />
+              <VnpayMark light={isBest} />
             </button>
             <button
               type="button"
               onClick={() => onPaymentMethodChange('momo')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl font-semibold text-sm border-2 transition-all ${
-                paymentMethod === 'momo'
+              aria-label="Thanh toán qua MoMo"
+              className={`flex-1 flex items-center justify-center min-h-[44px] py-2.5 rounded-xl font-semibold text-sm border-2 transition-all ${paymentMethod === 'momo'
                   ? 'border-[#a50064] bg-[#a50064]/5 text-[#a50064]'
                   : `border-[#e2e8f0] ${isBest ? 'bg-white/10 text-white/70 border-white/20' : 'bg-white text-[#475569] border-[#e2e8f0]'} hover:border-[#a50064]/50`
-              }`}
+                }`}
             >
-              <img src="https://upload.wikimedia.org/wikipedia/commons/b/b5/MoMo_Logo.png" alt="MoMo" className="h-5 object-contain" />
+              <MomoMark light={isBest} />
             </button>
           </div>
 
@@ -201,14 +251,23 @@ function PackageCard({
 
       <button
         onClick={onBuy}
-        disabled={isLoading || isVip}
-        className={`mt-auto w-full py-4 rounded-2xl font-bold text-base transition-all duration-200 ${
-          isBest
-            ? 'bg-white text-[#f20d0d] hover:bg-yellow-400 hover:text-[#0f172a]'
-            : 'bg-[#f20d0d] text-white hover:bg-[#d90a0a]'
-        } ${isLoading ? 'opacity-60 cursor-not-allowed' : ''} ${isVip ? 'cursor-not-allowed opacity-50' : ''}`}
+        disabled={isLoading || isGreyedOut}
+        className={`mt-auto w-full py-4 rounded-2xl font-bold text-base transition-all duration-200 ${isGreyedOut
+            ? 'bg-[#e2e8f0] text-[#94a3b8] cursor-not-allowed'
+            : isBest
+              ? 'bg-white text-[#f20d0d] hover:bg-yellow-400 hover:text-[#0f172a]'
+              : 'bg-[#f20d0d] text-white hover:bg-[#d90a0a]'
+          } ${isLoading ? 'opacity-60 cursor-not-allowed' : ''}`}
       >
-        {isVip ? 'Đã là VIP' : isLoading ? 'Đang xử lý…' : 'Mua ngay'}
+        {isCurrentPackage
+          ? 'Gói hiện tại'
+          : isLowerTierLocked
+            ? 'Gói thấp hơn'
+            : isUpgradeTier
+              ? 'Nâng cấp / Mua thêm'
+              : isLoading
+                ? 'Đang xử lý…'
+                : 'Mua ngay'}
       </button>
     </div>
   );
@@ -233,7 +292,7 @@ export default function VipPage() {
     if (!authLoading && user) {
       loadData();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user]);
 
   async function loadData() {
@@ -278,8 +337,9 @@ export default function VipPage() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc]">
+      <Navbar />
       {/* Hero */}
-      <div className="bg-gradient-to-br from-[#0f172a] via-[#1a1a2e] to-[#0f172a] pt-32 pb-20 px-6 text-center">
+      <div className="bg-gradient-to-br from-[#0f172a] via-[#1a1a2e] to-[#0f172a] pt-24 pb-20 px-6 text-center">
         <div className="max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 bg-[#f20d0d]/20 border border-[#f20d0d]/30 rounded-full px-5 py-2 mb-6">
             <svg className="w-4 h-4 text-[#f20d0d]" fill="currentColor" viewBox="0 0 24 24">
@@ -313,22 +373,32 @@ export default function VipPage() {
                 </p>
               </div>
             </div>
-            <div className="text-right">
-              <p className="text-white/60 text-xs">Hết hạn</p>
-              <p className="text-white font-semibold text-sm">
-                {vipStatus.endDate
-                  ? new Date(vipStatus.endDate).toLocaleDateString('vi-VN')
-                  : '—'}
-              </p>
+            <div className="flex items-center gap-6">
+              <div className="text-right">
+                <p className="text-white/60 text-xs">Hết hạn</p>
+                <p className="text-white font-semibold text-sm">
+                  {vipStatus.endDate
+                    ? new Date(vipStatus.endDate).toLocaleDateString('vi-VN')
+                    : '—'}
+                </p>
+              </div>
+              {vipStatus.packageDuration !== undefined && packages.some(p => p.duration > vipStatus.packageDuration!) && (
+                <div className="text-right hidden md:block">
+                  <p className="text-yellow-300 text-xs font-semibold">Nâng cấp VIP</p>
+                  <p className="text-white/60 text-xs">Còn gói cao hơn để mua thêm</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Package Grid */}
-      <div className="max-w-7xl mx-auto px-6 py-16">
+      {/* Package Grid — scroll-mt tránh tiêu đề bị navbar fixed che */}
+      <div className="max-w-7xl mx-auto px-6 py-16 relative z-10">
         <div className="text-center mb-14">
-          <h2 className="text-3xl font-black text-[#0f172a] mb-3">Chọn gói VIP phù hợp với bạn</h2>
+          <h2 id="vip-goi" className="text-3xl font-black text-[#0f172a] mb-3 scroll-mt-24">
+            Chọn gói VIP phù hợp với bạn
+          </h2>
           <p className="text-[#64748b] text-base">Tất cả gói đều có quyền truy cập đầy đủ kho phim VIP</p>
         </div>
 
@@ -368,6 +438,8 @@ export default function VipPage() {
                 onBuy={() => handleBuy(pkg)}
                 isLoading={purchasing === pkg.id}
                 isVip={vipStatus?.isVip === true}
+                currentPackageId={vipStatus?.packageId}
+                currentPackageDuration={vipStatus?.packageDuration}
                 paymentMethod={paymentMethod}
                 onPaymentMethodChange={setPaymentMethod}
                 momoMethod={momoMethod}
