@@ -681,6 +681,18 @@ export const vipApi = {
       headers: authHeaders(token),
     });
   },
+
+  /** Đồng bộ VIP khi MoMo redirect thẳng về frontend (có signature trên URL). */
+  confirmMoMoReturn: (token: string, query: Record<string, string>) => {
+    return fetchApi<{ activated: boolean; alreadyProcessed?: boolean; reason?: string }>(
+      '/vip/payment/momo-client-confirm',
+      {
+        method: 'POST',
+        body: JSON.stringify({ query }),
+        headers: authHeaders(token),
+      }
+    );
+  },
 };
 
 export interface VipPackage {

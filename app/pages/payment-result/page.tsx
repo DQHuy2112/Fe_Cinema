@@ -1,8 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { useAuth } from '@/app/context/AuthContext';
+import { vipApi } from '@/app/lib/api';
+
+type VipSyncState = 'idle' | 'syncing' | 'ok' | 'error' | 'skipped';
 
 const RESPONSE_LABELS: Record<string, string> = {
   '00': 'Giao dịch thành công',
@@ -28,29 +32,39 @@ const MOMO_RESPONSE_LABELS: Record<string, string> = {
 };
 
 function getMessage(code: string): string {
+  if (!code) {
+    return 'Không đọc được mã kết quả từ URL. Kiểm tra cấu hình return URL (MoMo/VNPay).';
+  }
   return RESPONSE_LABELS[code] || MOMO_RESPONSE_LABELS[code] || `Mã lỗi: ${code}`;
 }
 
 export default function PaymentResultPage() {
   const searchParams = useSearchParams();
+  const { token } = useAuth();
   const [code, setCode] = useState<string | null>(null);
   const [txnRef, setTxnRef] = useState<string | null>(null);
   const [amount, setAmount] = useState<string | null>(null);
   const [bankCode, setBankCode] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
+  const [vipSync, setVipSync] = useState<VipSyncState>('idle');
+  const momoSyncStarted = useRef(false);
 
   useEffect(() => {
-    // MoMo return params
+    // 1) Backend đã xử lý momo-return rồi redirect sang đây (có tiền tố momo_)
     const momoResultCode = searchParams.get('momo_resultCode');
     const momoOrderId = searchParams.get('momo_orderId');
     const momoAmount = searchParams.get('momo_amount');
-    const momoMsg = searchParams.get('momo_message');
 
-    // VNPay return params
+    // 2) VNPay
     const respCode = searchParams.get('vnp_ResponseCode');
     const tRef = searchParams.get('vnp_TxnRef');
     const amt = searchParams.get('vnp_Amount');
     const bCode = searchParams.get('vnp_BankCode');
+
+    // 3) MoMo redirect thẳng tới frontend (MOMO_RETURN_URL = /pages/payment-result):
+    //    query gốc là resultCode, orderId, amount, partnerCode, payType, … — không có momo_
+    const momoDirectCode = searchParams.get('resultCode');
+    const momoPartner = searchParams.get('partnerCode');
 
     if (momoResultCode !== null) {
       setCode(momoResultCode);
@@ -62,13 +76,91 @@ export default function PaymentResultPage() {
       setTxnRef(tRef);
       setAmount(amt ? String(Number(amt) / 100) : null);
       setBankCode(bCode);
+    } else if (momoDirectCode !== null && respCode === null) {
+      setCode(momoDirectCode);
+      setTxnRef(searchParams.get('orderId'));
+      setAmount(searchParams.get('amount'));
+      const payType = searchParams.get('payType');
+      setBankCode(
+        payType === 'napas'
+          ? 'MoMo (thẻ ATM Napas)'
+          : payType === 'credit'
+            ? 'MoMo (thẻ quốc tế)'
+            : momoPartner
+              ? `MoMo (${momoPartner})`
+              : 'MoMo'
+      );
     }
 
     setLoaded(true);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams]);
+
+  /* MoMo redirect thẳng → backend không chạy momo-return; đồng bộ VIP có chữ ký URL */
+  useEffect(() => {
+    if (!loaded || momoSyncStarted.current) return;
+
+    const success = code === '0' || code === '00';
+    if (!success) {
+      setVipSync('skipped');
+      return;
+    }
+
+    const isBackendMomoRedirect = searchParams.get('momo_resultCode') !== null;
+    const isVnpay = searchParams.get('vnp_ResponseCode') !== null;
+    const isDirectMoMo =
+      searchParams.get('resultCode') !== null && !isVnpay && !isBackendMomoRedirect;
+
+    if (!isDirectMoMo) {
+      setVipSync('skipped');
+      return;
+    }
+
+    const signature = searchParams.get('signature');
+    if (!signature) {
+      setVipSync('error');
+      return;
+    }
+
+    if (!token) {
+      setVipSync('error');
+      return;
+    }
+
+    momoSyncStarted.current = true;
+    setVipSync('syncing');
+
+    const query: Record<string, string> = {};
+    searchParams.forEach((value, key) => {
+      query[key] = value;
+    });
+
+    vipApi
+      .confirmMoMoReturn(token, query)
+      .then(() => setVipSync('ok'))
+      .catch(() => setVipSync('error'));
+  }, [loaded, code, token, searchParams]);
 
   const isSuccess = code === '00' || code === '0' || code === '07';
+
+  const needsMoMoClientSync =
+    isSuccess &&
+    searchParams.get('resultCode') !== null &&
+    searchParams.get('vnp_ResponseCode') === null &&
+    searchParams.get('momo_resultCode') === null;
+
+  const successSubtitle = (() => {
+    if (!isSuccess) return getMessage(code || '');
+    if (needsMoMoClientSync) {
+      if (vipSync === 'error') {
+        return 'Thanh toán đã thành công trên MoMo. Nếu VIP chưa lên, hãy đăng nhập đúng tài khoản đã mua gói rồi tải lại trang này, hoặc mở trang VIP. Bạn cũng có thể đặt MOMO_RETURN_URL trỏ về API `/api/vip/payment/momo-return` để kích hoạt tự động.';
+      }
+      if (vipSync === 'ok' || vipSync === 'skipped') {
+        return 'Cảm ơn bạn! Gói VIP đã được kích hoạt. Hãy kiểm tra trang VIP để xem thời hạn.';
+      }
+      return 'Đang xác nhận thanh toán và kích hoạt VIP trên hệ thống…';
+    }
+    return 'Cảm ơn bạn! Gói VIP đã được kích hoạt. Hãy kiểm tra trang VIP để xem thời hạn.';
+  })();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1a1a2e] to-[#0f172a] flex items-center justify-center px-6">
@@ -105,11 +197,7 @@ export default function PaymentResultPage() {
               {isSuccess ? 'Thanh toán thành công!' : 'Thanh toán thất bại'}
             </h1>
 
-            <p className="text-[#64748b] text-sm mb-8">
-              {isSuccess
-                ? 'Cảm ơn bạn! Gói VIP đã được kích hoạt. Hãy kiểm tra trang VIP để xem thời hạn.'
-                : getMessage(code || '')}
-            </p>
+            <p className="text-[#64748b] text-sm mb-8">{successSubtitle}</p>
 
             {/* Details */}
             <div className="bg-[#f8fafc] rounded-2xl p-5 text-left space-y-3 mb-8">
