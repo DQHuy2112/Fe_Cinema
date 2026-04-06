@@ -554,7 +554,7 @@ export default function AdminMovies() {
 
       {/* VSMOV Search Modal */}
       {showVsMovModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-start justify-center p-4 pt-10">
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-10 bg-black/30">
           <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[85vh] overflow-hidden flex flex-col">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-3">
@@ -751,7 +751,7 @@ export default function AdminMovies() {
 
       {/* Movie Add/Edit Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30">
           <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
             <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-gray-900">{editingMovie ? 'Sửa phim' : 'Thêm phim mới'}</h2>

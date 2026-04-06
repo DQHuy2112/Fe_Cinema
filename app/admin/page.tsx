@@ -208,9 +208,9 @@ export default function AdminDashboard() {
                           {cat.name}
                         </span>
                       ))}
-                      {movie.categories?.length > 2 && (
+                      {(movie.categories?.length ?? 0) > 2 && (
                         <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
-                          +{movie.categories.length - 2}
+                          +{(movie.categories?.length ?? 0) - 2}
                         </span>
                       )}
                     </div>

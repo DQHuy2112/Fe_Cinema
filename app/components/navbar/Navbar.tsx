@@ -51,7 +51,7 @@ function NavAvatarButton({
   scrolled: boolean;
 }) {
   const avatarSrc = user ? getAvatarSrc(user.avatar as string | undefined) : null;
-  const initial = user ? user.username.charAt(0).toUpperCase() : null;
+  const initial = user?.username?.charAt(0)?.toUpperCase() ?? null;
 
   return (
     <button
